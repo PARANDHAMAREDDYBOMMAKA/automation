@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalvium Worklog Automation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(72, 187, 120, 0.3);
+        }
+
+        .alert {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .schedule-info {
+            background: #f7fafc;
+            border-left: 4px solid #667eea;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .schedule-info h3 {
+            font-size: 16px;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .schedule-info p {
+            font-size: 14px;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .how-to {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .how-to h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .how-to ol {
+            margin-left: 20px;
+            color: #555;
+            line-height: 1.8;
+        }
+
+        .how-to code {
+            background: #f7fafc;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #d63384;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Kalvium Worklog Automation</h1>
+        <p class="subtitle">Configure once, automate forever - Runs daily at 5:00 PM IST</p>
+
+        <div th:if="${hasConfig}" class="status-badge status-active">✓ Configuration Active</div>
+        <div th:unless="${hasConfig}" class="status-badge status-inactive">⚠ No Configuration</div>
+
+        <div class="schedule-info">
+            <h3>📅 Automatic Schedule</h3>
+            <p>Your worklog will be automatically submitted every weekday (Monday-Friday) at <strong>5:00 PM IST</strong>. You can also run it manually anytime using the button below.</p>
+        </div>
+
+        <div id="alert" class="alert"></div>
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+
+        <form id="configForm">
+            <div class="form-group">
+                <label for="authSessionId">AUTH_SESSION_ID *</label>
+                <input type="text" id="authSessionId" name="authSessionId" required
+                       th:value="${hasConfig} ? ${config.authSessionId} : ''"
+                       placeholder="a99bb304-bef2-44d8-99b1-c756f4c30b42.localhost-58590">
+                <p class="help-text">Copy from browser cookies</p>
+            </div>
+
+            <div class="form-group">
+                <label for="keycloakIdentity">KEYCLOAK_IDENTITY *</label>
+                <textarea id="keycloakIdentity" name="keycloakIdentity" required
+                          rows="4"
+                          th:text="${hasConfig} ? ${config.keycloakIdentity} : ''"
+                          placeholder="eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI2ZWQ..."></textarea>
+                <p class="help-text">JWT token from browser cookies</p>
+            </div>
+
+            <div class="form-group">
+                <label for="keycloakSession">KEYCLOAK_SESSION *</label>
+                <input type="text" id="keycloakSession" name="keycloakSession" required
+                       th:value="${hasConfig} ? ${config.keycloakSession} : ''"
+                       placeholder="kalvium/a812537e-5a92-4c24-b175-cefb2f406321/a99bb304...">
+                <p class="help-text">Session string from browser cookies</p>
+            </div>
+
+            <div class="form-group">
+                <label for="tasksCompleted">Tasks Completed</label>
+                <textarea id="tasksCompleted" name="tasksCompleted"
+                          th:text="${hasConfig} ? ${config.tasksCompleted} : 'Need to complete the tasks assigned.'"
+                          placeholder="Describe your daily tasks..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="challenges">Challenges Encountered</label>
+                <textarea id="challenges" name="challenges"
+                          th:text="${hasConfig} ? ${config.challenges} : 'NA'"
+                          placeholder="Any challenges you faced..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="blockers">Blockers Faced</label>
+                <textarea id="blockers" name="blockers"
+                          th:text="${hasConfig} ? ${config.blockers} : 'NA'"
+                          placeholder="Any blockers..."></textarea>
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn-primary">💾 Save Configuration</button>
+                <button type="button" id="runNowBtn" class="btn-secondary">▶️ Run Now</button>
+            </div>
+        </form>
+
+        <div class="how-to">
+            <h3>📖 How to Get Your Cookies</h3>
+            <ol>
+                <li>Open your browser and go to <strong>kalvium.community</strong></li>
+                <li>Log in with your Google account</li>
+                <li>Press <code>F12</code> or right-click → Inspect to open DevTools</li>
+                <li>Go to the <strong>Application</strong> tab</li>
+                <li>Under <strong>Storage → Cookies</strong>, select kalvium.community</li>
+                <li>Copy the values of: <code>AUTH_SESSION_ID</code>, <code>KEYCLOAK_IDENTITY</code>, and <code>KEYCLOAK_SESSION</code></li>
+                <li>Paste them in the form above and click Save</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('configForm');
+        const runNowBtn = document.getElementById('runNowBtn');
+        const alert = document.getElementById('alert');
+        const loading = document.getElementById('loading');
+
+        function showAlert(message, type) {
+            alert.textContent = message;
+            alert.className = 'alert alert-' + type;
+            alert.style.display = 'block';
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+
+        function showLoading(show) {
+            loading.style.display = show ? 'block' : 'none';
+            form.style.display = show ? 'none' : 'block';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            showLoading(true);
+
+            const formData = {
+                authSessionId: document.getElementById('authSessionId').value,
+                keycloakIdentity: document.getElementById('keycloakIdentity').value,
+                keycloakSession: document.getElementById('keycloakSession').value,
+                tasksCompleted: document.getElementById('tasksCompleted').value,
+                challenges: document.getElementById('challenges').value,
+                blockers: document.getElementById('blockers').value
+            };
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                showLoading(false);
+
+                if (data.status === 'success') {
+                    showAlert(data.message, 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            } catch (error) {
+                showLoading(false);
+                showAlert('Error saving configuration: ' + error.message, 'error');
+            }
+        });
+
+        runNowBtn.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to run the automation now?')) {
+                return;
+            }
+
+            showLoading(true);
+            showAlert('Running automation... This may take 30-60 seconds.', 'info');
+
+            try {
+                const response = await fetch('/api/run', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                showLoading(false);
+
+                if (data.status === 'success') {
+                    showAlert(data.message, 'success');
+                } else {
+                    showAlert(data.message, 'error');
+                }
+            } catch (error) {
+                showLoading(false);
+                showAlert('Error running automation: ' + error.message, 'error');
+            }
+        });
+    </script>
+</body>
+</html>

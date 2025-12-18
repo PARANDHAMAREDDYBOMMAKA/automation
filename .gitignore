@@ -1,0 +1,29 @@
+# Compiled class files
+*.class
+target/
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Log files
+*.log
+logs/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# Sensitive configuration files
+src/main/resources/config.properties
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
