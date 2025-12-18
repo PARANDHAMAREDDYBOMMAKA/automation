@@ -29,6 +29,17 @@ public class WorklogController {
         return "index";
     }
 
+    @GetMapping("/health")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> health() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "UP");
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("service", "Kalvium Worklog Automation");
+        response.put("hasConfig", configStorage.hasConfig());
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/api/config/save")
     @ResponseBody
     public ResponseEntity<Map<String, String>> saveConfig(@RequestBody AuthConfig config) {

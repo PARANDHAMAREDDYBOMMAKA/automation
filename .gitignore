@@ -21,6 +21,12 @@ logs/
 
 # Sensitive configuration files
 src/main/resources/config.properties
+config.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
 
 # macOS
 .DS_Store

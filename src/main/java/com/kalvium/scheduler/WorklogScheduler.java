@@ -1,16 +1,19 @@
 package com.kalvium.scheduler;
 
-import com.kalvium.model.AuthConfig;
-import com.kalvium.service.ConfigStorageService;
-import com.kalvium.service.WorklogService;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import com.kalvium.model.AuthConfig;
+import com.kalvium.service.ConfigStorageService;
+import com.kalvium.service.WorklogService;
 
 @Component
 public class WorklogScheduler {
@@ -22,6 +25,23 @@ public class WorklogScheduler {
 
     @Autowired
     private ConfigStorageService configStorage;
+
+    @Value("${app.base.url:http://localhost:8080}")
+    private String appBaseUrl;
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
+
+    @Scheduled(fixedRate = 600000)
+    public void keepAlive() {
+        try {
+            String healthUrl = appBaseUrl + "/health";
+            restTemplate.getForObject(healthUrl, String.class);
+            logger.debug("Keep-alive ping sent to: {}", healthUrl);
+        } catch (Exception e) {
+            logger.debug("Keep-alive ping failed (this is normal on startup): {}", e.getMessage());
+        }
+    }
 
     @Scheduled(cron = "0 30 11 * * MON-FRI", zone = "UTC")
     public void runDailyWorklogSubmission() {

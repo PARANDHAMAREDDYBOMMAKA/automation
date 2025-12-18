@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kalvium Worklog Automation</title>
+
+    <!-- Wappalyzer Technology Detection Meta Tags -->
+    <meta name="generator" content="Spring Boot 3.2.0">
+    <meta name="framework" content="Spring Framework">
+    <meta name="template-engine" content="Thymeleaf">
+    <meta name="programming-language" content="Java 17">
+    <meta name="automation-tool" content="Selenium WebDriver">
+    <meta name="database" content="SQLite">
+    <meta name="build-tool" content="Maven">
+    <meta name="web-driver" content="WebDriverManager">
+    <meta name="containerization" content="Docker">
     <style>
         * {
             margin: 0;
@@ -548,10 +559,27 @@
 
             localStorage.setItem('kalviumConfig', JSON.stringify(formData));
 
-            statusBadge.textContent = 'Configuration Active';
-            statusBadge.className = 'status-badge status-active';
+            try {
+                const response = await fetch('/api/config/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
 
-            showAlert('Configuration saved to browser! Persists across refreshes.', 'success');
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    statusBadge.textContent = 'Configuration Active';
+                    statusBadge.className = 'status-badge status-active';
+                    showAlert('Configuration saved! Daily automation is now active.', 'success');
+                } else {
+                    showAlert('Error saving configuration: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error saving configuration: ' + error.message, 'error');
+            }
         });
 
         runNowBtn.addEventListener('click', async () => {
