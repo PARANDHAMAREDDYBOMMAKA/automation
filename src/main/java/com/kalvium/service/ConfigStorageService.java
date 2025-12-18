@@ -15,33 +15,41 @@ import java.nio.file.*;
 public class ConfigStorageService {
 
     private static final Logger logger = LoggerFactory.getLogger(ConfigStorageService.class);
-    private static final String CONFIG_FILE = "/app/data/config.json";
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    private String configPath;
 
     @PostConstruct
     public void init() {
         try {
-            Files.createDirectories(Paths.get("/app/data"));
-        } catch (IOException e) {
-            logger.error("Failed to create data directory", e);
+            Path appData = Paths.get("/app/data");
+            if (Files.isWritable(appData.getParent())) {
+                Files.createDirectories(appData);
+                configPath = "/app/data/config.json";
+            } else {
+                throw new IOException("Not writable");
+            }
+        } catch (Exception e) {
+            configPath = System.getProperty("java.io.tmpdir") + "/config.json";
+            logger.info("Using temp directory for config: " + configPath);
         }
     }
 
     public void saveConfig(AuthConfig config) throws IOException {
         String json = gson.toJson(config);
-        Files.writeString(Paths.get(CONFIG_FILE), json);
-        logger.info("Configuration saved successfully");
+        Files.writeString(Paths.get(configPath), json);
+        logger.info("Configuration saved to: " + configPath);
     }
 
     public AuthConfig loadConfig() throws IOException {
-        if (!Files.exists(Paths.get(CONFIG_FILE))) {
+        Path path = Paths.get(configPath);
+        if (!Files.exists(path)) {
             return null;
         }
-        String json = Files.readString(Paths.get(CONFIG_FILE));
+        String json = Files.readString(path);
         return gson.fromJson(json, AuthConfig.class);
     }
 
     public boolean hasConfig() {
-        return Files.exists(Paths.get(CONFIG_FILE));
+        return Files.exists(Paths.get(configPath));
     }
 }
