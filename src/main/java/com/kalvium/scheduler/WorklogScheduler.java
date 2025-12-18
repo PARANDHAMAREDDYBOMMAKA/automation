@@ -1,5 +1,7 @@
 package com.kalvium.scheduler;
 
+import com.kalvium.model.AuthConfig;
+import com.kalvium.service.ConfigStorageService;
 import com.kalvium.service.WorklogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,24 +20,31 @@ public class WorklogScheduler {
     @Autowired
     private WorklogService worklogService;
 
-    // Run every day at 5:00 PM IST (11:30 AM UTC)
-    // Cron format: second, minute, hour, day, month, weekday
+    @Autowired
+    private ConfigStorageService configStorage;
+
     @Scheduled(cron = "0 30 11 * * MON-FRI", zone = "UTC")
     public void runDailyWorklogSubmission() {
         logger.info("=== Scheduled Worklog Automation Started at {} ===",
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
         try {
-            String result = worklogService.submitWorklog();
+            AuthConfig config = configStorage.loadConfig();
+            if (config == null) {
+                logger.error("No configuration found for scheduled run");
+                return;
+            }
+
+            String result = worklogService.submitWorklog(config);
             logger.info("Automation Result: {}", result);
 
             if (result.startsWith("SUCCESS")) {
-                logger.info("✓ Scheduled worklog submission completed successfully");
+                logger.info("Scheduled worklog submission completed successfully");
             } else {
-                logger.error("✗ Scheduled worklog submission failed: {}", result);
+                logger.error("Scheduled worklog submission failed: {}", result);
             }
         } catch (Exception e) {
-            logger.error("✗ Error during scheduled worklog submission", e);
+            logger.error("Error during scheduled worklog submission", e);
         }
 
         logger.info("=== Scheduled Worklog Automation Finished at {} ===",

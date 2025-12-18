@@ -206,6 +206,104 @@
             100% { transform: rotate(360deg); }
         }
 
+        .automation-log {
+            display: none;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-height: 600px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .automation-log.active {
+            display: block;
+        }
+
+        .log-step {
+            margin: 8px 0;
+            padding: 8px;
+            border-left: 3px solid #667eea;
+            padding-left: 12px;
+        }
+
+        .log-step.success {
+            border-left-color: #48bb78;
+            color: #48bb78;
+        }
+
+        .log-step.error {
+            border-left-color: #f56565;
+            color: #f56565;
+        }
+
+        .log-step.info {
+            border-left-color: #4299e1;
+            color: #4299e1;
+        }
+
+        .screenshot-container {
+            margin: 16px 0;
+            padding: 12px;
+            background: #2d2d2d;
+            border-radius: 8px;
+            border: 2px solid #667eea;
+        }
+
+        .screenshot-title {
+            color: #4299e1;
+            font-size: 12px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .screenshot-container img {
+            width: 100%;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .screenshot-container img:hover {
+            transform: scale(1.02);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
         .how-to {
             margin-top: 30px;
             padding-top: 30px;
@@ -234,14 +332,13 @@
 </head>
 <body>
     <div class="container">
-        <h1>🚀 Kalvium Worklog Automation</h1>
+        <h1>Kalvium Worklog Automation</h1>
         <p class="subtitle">Configure once, automate forever - Runs daily at 5:00 PM IST</p>
 
-        <div th:if="${hasConfig}" class="status-badge status-active">✓ Configuration Active</div>
-        <div th:unless="${hasConfig}" class="status-badge status-inactive">⚠ No Configuration</div>
+        <div id="statusBadge" class="status-badge status-inactive">No Configuration</div>
 
         <div class="schedule-info">
-            <h3>📅 Automatic Schedule</h3>
+            <h3>Automatic Schedule</h3>
             <p>Your worklog will be automatically submitted every weekday (Monday-Friday) at <strong>5:00 PM IST</strong>. You can also run it manually anytime using the button below.</p>
         </div>
 
@@ -251,11 +348,12 @@
             <p>Processing...</p>
         </div>
 
+        <div id="automationLog" class="automation-log"></div>
+
         <form id="configForm">
             <div class="form-group">
                 <label for="authSessionId">AUTH_SESSION_ID *</label>
                 <input type="text" id="authSessionId" name="authSessionId" required
-                       th:value="${hasConfig} ? ${config.authSessionId} : ''"
                        placeholder="a99bb304-bef2-44d8-99b1-c756f4c30b42.localhost-58590">
                 <p class="help-text">Copy from browser cookies</p>
             </div>
@@ -264,7 +362,6 @@
                 <label for="keycloakIdentity">KEYCLOAK_IDENTITY *</label>
                 <textarea id="keycloakIdentity" name="keycloakIdentity" required
                           rows="4"
-                          th:text="${hasConfig} ? ${config.keycloakIdentity} : ''"
                           placeholder="eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI2ZWQ..."></textarea>
                 <p class="help-text">JWT token from browser cookies</p>
             </div>
@@ -272,7 +369,6 @@
             <div class="form-group">
                 <label for="keycloakSession">KEYCLOAK_SESSION *</label>
                 <input type="text" id="keycloakSession" name="keycloakSession" required
-                       th:value="${hasConfig} ? ${config.keycloakSession} : ''"
                        placeholder="kalvium/a812537e-5a92-4c24-b175-cefb2f406321/a99bb304...">
                 <p class="help-text">Session string from browser cookies</p>
             </div>
@@ -280,32 +376,29 @@
             <div class="form-group">
                 <label for="tasksCompleted">Tasks Completed</label>
                 <textarea id="tasksCompleted" name="tasksCompleted"
-                          th:text="${hasConfig} ? ${config.tasksCompleted} : 'Need to complete the tasks assigned.'"
-                          placeholder="Describe your daily tasks..."></textarea>
+                          placeholder="Describe your daily tasks...">Need to complete the tasks assigned.</textarea>
             </div>
 
             <div class="form-group">
                 <label for="challenges">Challenges Encountered</label>
                 <textarea id="challenges" name="challenges"
-                          th:text="${hasConfig} ? ${config.challenges} : 'NA'"
-                          placeholder="Any challenges you faced..."></textarea>
+                          placeholder="Any challenges you faced...">NA</textarea>
             </div>
 
             <div class="form-group">
                 <label for="blockers">Blockers Faced</label>
                 <textarea id="blockers" name="blockers"
-                          th:text="${hasConfig} ? ${config.blockers} : 'NA'"
-                          placeholder="Any blockers..."></textarea>
+                          placeholder="Any blockers...">NA</textarea>
             </div>
 
             <div class="button-group">
-                <button type="submit" class="btn-primary">💾 Save Configuration</button>
-                <button type="button" id="runNowBtn" class="btn-secondary">▶️ Run Now</button>
+                <button type="submit" class="btn-primary">Save Configuration</button>
+                <button type="button" id="runNowBtn" class="btn-secondary">Run Now</button>
             </div>
         </form>
 
         <div class="how-to">
-            <h3>📖 How to Get Your Cookies</h3>
+            <h3>How to Get Your Cookies</h3>
             <ol>
                 <li>Open your browser and go to <strong>kalvium.community</strong></li>
                 <li>Log in with your Google account</li>
@@ -318,11 +411,34 @@
         </div>
     </div>
 
+    <div id="screenshotModal" class="modal">
+        <span class="close-modal">&times;</span>
+        <img class="modal-content" id="modalImage">
+    </div>
+
     <script>
         const form = document.getElementById('configForm');
         const runNowBtn = document.getElementById('runNowBtn');
         const alert = document.getElementById('alert');
         const loading = document.getElementById('loading');
+        const statusBadge = document.getElementById('statusBadge');
+        const automationLog = document.getElementById('automationLog');
+
+        function loadConfig() {
+            const config = localStorage.getItem('kalviumConfig');
+            if (config) {
+                const data = JSON.parse(config);
+                document.getElementById('authSessionId').value = data.authSessionId || '';
+                document.getElementById('keycloakIdentity').value = data.keycloakIdentity || '';
+                document.getElementById('keycloakSession').value = data.keycloakSession || '';
+                document.getElementById('tasksCompleted').value = data.tasksCompleted || 'Need to complete the tasks assigned.';
+                document.getElementById('challenges').value = data.challenges || 'NA';
+                document.getElementById('blockers').value = data.blockers || 'NA';
+
+                statusBadge.textContent = 'Configuration Active';
+                statusBadge.className = 'status-badge status-active';
+            }
+        }
 
         function showAlert(message, type) {
             alert.textContent = message;
@@ -338,9 +454,88 @@
             form.style.display = show ? 'none' : 'block';
         }
 
+        function addLogStep(message, type = 'info') {
+            const step = document.createElement('div');
+            step.className = 'log-step ' + type;
+            step.textContent = '• ' + message;
+            automationLog.appendChild(step);
+            automationLog.scrollTop = automationLog.scrollHeight;
+        }
+
+        function clearLog() {
+            automationLog.innerHTML = '';
+        }
+
+        function addScreenshot(base64Data, description, index) {
+            const container = document.createElement('div');
+            container.className = 'screenshot-container';
+
+            const title = document.createElement('div');
+            title.className = 'screenshot-title';
+            title.textContent = `Screenshot ${index + 1}: ${description}`;
+
+            const img = document.createElement('img');
+            img.src = base64Data;
+            img.alt = description;
+            img.onclick = () => openModal(base64Data);
+
+            container.appendChild(title);
+            container.appendChild(img);
+            automationLog.appendChild(container);
+            automationLog.scrollTop = automationLog.scrollHeight;
+        }
+
+        function openModal(imageSrc) {
+            const modal = document.getElementById('screenshotModal');
+            const modalImg = document.getElementById('modalImage');
+            modal.classList.add('active');
+            modalImg.src = imageSrc;
+        }
+
+        function parseAutomationResponse(message) {
+            const lines = message.split('\n');
+            const steps = [];
+            const screenshots = [];
+            let inSteps = false;
+            let inScreenshots = false;
+
+            for (let line of lines) {
+                if (line.startsWith('STEPS:')) {
+                    inSteps = true;
+                    inScreenshots = false;
+                    continue;
+                } else if (line.startsWith('SCREENSHOTS:')) {
+                    inSteps = false;
+                    inScreenshots = true;
+                    continue;
+                } else if (line.startsWith('[IMG]')) {
+                    const match = line.match(/\[IMG\](\d+)\[\/IMG\](data:image[^\s]+)/);
+                    if (match) {
+                        screenshots.push(match[2]);
+                    }
+                    continue;
+                }
+
+                if (inSteps && line.trim()) {
+                    steps.push(line.trim());
+                }
+            }
+
+            return { steps, screenshots };
+        }
+
+        document.querySelector('.close-modal').onclick = function() {
+            document.getElementById('screenshotModal').classList.remove('active');
+        };
+
+        document.getElementById('screenshotModal').onclick = function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+            }
+        };
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            showLoading(true);
 
             const formData = {
                 authSessionId: document.getElementById('authSessionId').value,
@@ -351,56 +546,91 @@
                 blockers: document.getElementById('blockers').value
             };
 
-            try {
-                const response = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(formData)
-                });
+            localStorage.setItem('kalviumConfig', JSON.stringify(formData));
 
-                const data = await response.json();
-                showLoading(false);
+            statusBadge.textContent = 'Configuration Active';
+            statusBadge.className = 'status-badge status-active';
 
-                if (data.status === 'success') {
-                    showAlert(data.message, 'success');
-                    setTimeout(() => location.reload(), 1500);
-                } else {
-                    showAlert(data.message, 'error');
-                }
-            } catch (error) {
-                showLoading(false);
-                showAlert('Error saving configuration: ' + error.message, 'error');
-            }
+            showAlert('Configuration saved to browser! Persists across refreshes.', 'success');
         });
 
         runNowBtn.addEventListener('click', async () => {
+            const config = localStorage.getItem('kalviumConfig');
+            if (!config) {
+                showAlert('Please save configuration first!', 'error');
+                return;
+            }
+
             if (!confirm('Are you sure you want to run the automation now?')) {
                 return;
             }
 
+            clearLog();
+            automationLog.classList.add('active');
             showLoading(true);
-            showAlert('Running automation... This may take 30-60 seconds.', 'info');
+
+            addLogStep('Starting automation...', 'info');
+            addLogStep('Loading configuration...', 'info');
 
             try {
                 const response = await fetch('/api/run', {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: config
                 });
 
                 const data = await response.json();
                 showLoading(false);
 
                 if (data.status === 'success') {
-                    showAlert(data.message, 'success');
+                    const parsed = parseAutomationResponse(data.message);
+
+                    // Display all steps
+                    parsed.steps.forEach((step, index) => {
+                        const type = step.includes('ERROR') ? 'error' :
+                                   step.includes('SUCCESS') ? 'success' : 'info';
+                        addLogStep(step, type);
+
+                        // Check if this step has an associated screenshot
+                        if (step.includes('Screenshot:')) {
+                            const screenshotDesc = step.split('Screenshot:')[1].trim();
+                            const screenshotIndex = parsed.steps.slice(0, index).filter(s => s.includes('Screenshot:')).length;
+                            if (parsed.screenshots[screenshotIndex]) {
+                                addScreenshot(parsed.screenshots[screenshotIndex], screenshotDesc, screenshotIndex);
+                            }
+                        }
+                    });
+
+                    showAlert('Worklog submitted successfully!', 'success');
                 } else {
-                    showAlert(data.message, 'error');
+                    const parsed = parseAutomationResponse(data.message);
+
+                    // Display error steps
+                    parsed.steps.forEach((step, index) => {
+                        const type = step.includes('ERROR') ? 'error' : 'info';
+                        addLogStep(step, type);
+
+                        if (step.includes('Screenshot:')) {
+                            const screenshotDesc = step.split('Screenshot:')[1].trim();
+                            const screenshotIndex = parsed.steps.slice(0, index).filter(s => s.includes('Screenshot:')).length;
+                            if (parsed.screenshots[screenshotIndex]) {
+                                addScreenshot(parsed.screenshots[screenshotIndex], screenshotDesc, screenshotIndex);
+                            }
+                        }
+                    });
+
+                    showAlert('Automation failed. Check logs for details.', 'error');
                 }
             } catch (error) {
                 showLoading(false);
+                addLogStep('Error: ' + error.message, 'error');
                 showAlert('Error running automation: ' + error.message, 'error');
             }
         });
+
+        loadConfig();
     </script>
 </body>
 </html>
