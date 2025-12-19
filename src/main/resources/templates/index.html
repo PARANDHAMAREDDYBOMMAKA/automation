@@ -516,24 +516,11 @@
         function parseAutomationResponse(message) {
             const lines = message.split('\n');
             const steps = [];
-            const screenshots = [];
             let inSteps = false;
-            let inScreenshots = false;
 
             for (let line of lines) {
                 if (line.startsWith('STEPS:')) {
                     inSteps = true;
-                    inScreenshots = false;
-                    continue;
-                } else if (line.startsWith('SCREENSHOTS:')) {
-                    inSteps = false;
-                    inScreenshots = true;
-                    continue;
-                } else if (line.startsWith('[IMG]')) {
-                    const match = line.match(/\[IMG\](\d+)\[\/IMG\](data:image[^\s]+)/);
-                    if (match) {
-                        screenshots.push(match[2]);
-                    }
                     continue;
                 }
 
@@ -542,7 +529,7 @@
                 }
             }
 
-            return { steps, screenshots };
+            return { steps };
         }
 
         document.querySelector('.close-modal').onclick = function() {
@@ -626,19 +613,10 @@
                     const parsed = parseAutomationResponse(data.message);
 
                     // Display all steps
-                    parsed.steps.forEach((step, index) => {
+                    parsed.steps.forEach((step) => {
                         const type = step.includes('ERROR') ? 'error' :
                                    step.includes('SUCCESS') ? 'success' : 'info';
                         addLogStep(step, type);
-
-                        // Check if this step has an associated screenshot
-                        if (step.includes('Screenshot:')) {
-                            const screenshotDesc = step.split('Screenshot:')[1].trim();
-                            const screenshotIndex = parsed.steps.slice(0, index).filter(s => s.includes('Screenshot:')).length;
-                            if (parsed.screenshots[screenshotIndex]) {
-                                addScreenshot(parsed.screenshots[screenshotIndex], screenshotDesc, screenshotIndex);
-                            }
-                        }
                     });
 
                     showAlert('Worklog submitted successfully!', 'success');
@@ -646,17 +624,9 @@
                     const parsed = parseAutomationResponse(data.message);
 
                     // Display error steps
-                    parsed.steps.forEach((step, index) => {
+                    parsed.steps.forEach((step) => {
                         const type = step.includes('ERROR') ? 'error' : 'info';
                         addLogStep(step, type);
-
-                        if (step.includes('Screenshot:')) {
-                            const screenshotDesc = step.split('Screenshot:')[1].trim();
-                            const screenshotIndex = parsed.steps.slice(0, index).filter(s => s.includes('Screenshot:')).length;
-                            if (parsed.screenshots[screenshotIndex]) {
-                                addScreenshot(parsed.screenshots[screenshotIndex], screenshotDesc, screenshotIndex);
-                            }
-                        }
                     });
 
                     showAlert('Automation failed. Check logs for details.', 'error');
