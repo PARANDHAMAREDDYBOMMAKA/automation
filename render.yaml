@@ -9,6 +9,5 @@ services:
     envVars:
       - key: APP_BASE_URL
         sync: false
-      # Memory optimization: Disable unused features
       - key: SPRING_JMX_ENABLED
         value: "false"

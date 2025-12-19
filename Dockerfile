@@ -22,12 +22,6 @@ COPY --from=build /app/target/*.jar app.jar
 RUN mkdir -p /app/data
 EXPOSE 8080
 
-# JVM memory optimization for Render free tier (512MB total)
-# Allocate 300MB max heap to leave room for:
-# - Native memory (WebDriver, Chrome processes)
-# - Metaspace (class metadata)
-# - Thread stacks
-# - Direct buffers
 ENV JAVA_OPTS="-Xms128m -Xmx300m \
     -XX:MetaspaceSize=64m -XX:MaxMetaspaceSize=128m \
     -XX:+UseG1GC -XX:MaxGCPauseMillis=200 \
