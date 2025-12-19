@@ -21,4 +21,23 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 RUN mkdir -p /app/data
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+
+# JVM memory optimization for Render free tier (512MB total)
+# Allocate 300MB max heap to leave room for:
+# - Native memory (WebDriver, Chrome processes)
+# - Metaspace (class metadata)
+# - Thread stacks
+# - Direct buffers
+ENV JAVA_OPTS="-Xms128m -Xmx300m \
+    -XX:MetaspaceSize=64m -XX:MaxMetaspaceSize=128m \
+    -XX:+UseG1GC -XX:MaxGCPauseMillis=200 \
+    -XX:+UseStringDeduplication \
+    -XX:+OptimizeStringConcat \
+    -XX:+UseCompressedOops \
+    -XX:+UseCompressedClassPointers \
+    -XX:+HeapDumpOnOutOfMemoryError \
+    -XX:HeapDumpPath=/app/data/heap_dump.hprof \
+    -XX:+ExitOnOutOfMemoryError \
+    -Djava.security.egd=file:/dev/./urandom"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

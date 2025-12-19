@@ -37,10 +37,16 @@ public class WorklogService {
             addStep("Setting up ChromeDriver...");
             WebDriverManager.chromedriver().setup();
             ChromeOptions options = new ChromeOptions();
-            // Running in headless mode for production
+            // Running in headless mode for production with memory optimizations
             options.addArguments("--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
                     "--disable-blink-features=AutomationControlled", "--window-size=1920,1080",
-                    "--disable-gpu", "--disable-extensions");
+                    "--disable-gpu", "--disable-extensions",
+                    "--disable-background-networking", "--disable-default-apps",
+                    "--disable-sync", "--metrics-recording-only",
+                    "--mute-audio", "--no-first-run",
+                    "--safebrowsing-disable-auto-update",
+                    "--disable-client-side-phishing-detection",
+                    "--disable-component-extensions-with-background-pages");
 
             addStep("Opening Chrome browser...");
             driver = new ChromeDriver(options);
@@ -161,9 +167,17 @@ public class WorklogService {
             return buildErrorResponse(e.getMessage());
         } finally {
             if (driver != null) {
-                driver.quit();
-                addStep("Browser closed");
+                try {
+                    driver.quit();
+                    addStep("Browser closed");
+                } catch (Exception e) {
+                    logger.error("Error closing driver: " + e.getMessage());
+                }
             }
+            // Critical: Clear lists in finally block to prevent memory leaks
+            // Screenshots contain large base64-encoded images that accumulate over time
+            automationSteps.clear();
+            screenshots.clear();
         }
     }
 

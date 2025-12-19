@@ -3,10 +3,15 @@ package com.kalvium.scheduler;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.core5.util.TimeValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
@@ -29,7 +34,28 @@ public class WorklogScheduler {
     @Value("${app.base.url:http://localhost:8080}")
     private String appBaseUrl;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+
+    // Constructor to initialize RestTemplate with proper connection pool management
+    public WorklogScheduler() {
+        // Configure connection pool with aggressive cleanup to prevent memory leaks
+        PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
+        connectionManager.setMaxTotal(5); // Limit total connections
+        connectionManager.setDefaultMaxPerRoute(2); // Limit per-route connections
+
+        CloseableHttpClient httpClient = HttpClients.custom()
+                .setConnectionManager(connectionManager)
+                .evictIdleConnections(TimeValue.ofSeconds(30)) // Evict idle connections after 30s
+                .evictExpiredConnections() // Evict expired connections
+                .build();
+
+        HttpComponentsClientHttpRequestFactory requestFactory =
+                new HttpComponentsClientHttpRequestFactory(httpClient);
+        requestFactory.setConnectTimeout(5000); // 5 second connect timeout
+        requestFactory.setConnectionRequestTimeout(5000); // 5 second connection request timeout
+
+        this.restTemplate = new RestTemplate(requestFactory);
+    }
 
 
     @Scheduled(fixedRate = 600000)
