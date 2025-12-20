@@ -397,7 +397,7 @@
             <div class="form-group">
                 <label for="tasksCompleted">Tasks Completed</label>
                 <textarea id="tasksCompleted" name="tasksCompleted"
-                          placeholder="Describe your daily tasks...">Need to complete the tasks assigned.</textarea>
+                          placeholder="Describe your daily tasks...">Need to complete the tasks assigned today</textarea>
             </div>
 
             <div class="form-group">
@@ -452,7 +452,7 @@
                 document.getElementById('authSessionId').value = data.authSessionId || '';
                 document.getElementById('keycloakIdentity').value = data.keycloakIdentity || '';
                 document.getElementById('keycloakSession').value = data.keycloakSession || '';
-                document.getElementById('tasksCompleted').value = data.tasksCompleted || 'Need to complete the tasks assigned.';
+                document.getElementById('tasksCompleted').value = data.tasksCompleted || 'Need to complete the tasks assigned today';
                 document.getElementById('challenges').value = data.challenges || 'NA';
                 document.getElementById('blockers').value = data.blockers || 'NA';
 
@@ -516,20 +516,40 @@
         function parseAutomationResponse(message) {
             const lines = message.split('\n');
             const steps = [];
+            const screenshots = [];
             let inSteps = false;
+            let inScreenshots = false;
 
             for (let line of lines) {
                 if (line.startsWith('STEPS:')) {
                     inSteps = true;
+                    inScreenshots = false;
                     continue;
                 }
 
-                if (inSteps && line.trim()) {
+                if (line.startsWith('SCREENSHOTS:')) {
+                    inSteps = false;
+                    inScreenshots = true;
+                    continue;
+                }
+
+                if (inSteps && line.trim() && !line.startsWith('SCREENSHOTS:')) {
                     steps.push(line.trim());
+                }
+
+                if (inScreenshots && line.trim()) {
+                    // Parse screenshot format: [SCREENSHOT_0]description|base64data
+                    const match = line.match(/\[SCREENSHOT_(\d+)\](.+?)\|(.+)/);
+                    if (match) {
+                        const index = parseInt(match[1]);
+                        const description = match[2];
+                        const base64Data = 'data:image/png;base64,' + match[3];
+                        screenshots.push({ index, description, base64Data });
+                    }
                 }
             }
 
-            return { steps };
+            return { steps, screenshots };
         }
 
         document.querySelector('.close-modal').onclick = function() {
@@ -619,6 +639,11 @@
                         addLogStep(step, type);
                     });
 
+                    // Display all screenshots
+                    parsed.screenshots.forEach((screenshot) => {
+                        addScreenshot(screenshot.base64Data, screenshot.description, screenshot.index);
+                    });
+
                     showAlert('Worklog submitted successfully!', 'success');
                 } else {
                     const parsed = parseAutomationResponse(data.message);
@@ -627,6 +652,11 @@
                     parsed.steps.forEach((step) => {
                         const type = step.includes('ERROR') ? 'error' : 'info';
                         addLogStep(step, type);
+                    });
+
+                    // Display screenshots even on error (helps with debugging)
+                    parsed.screenshots.forEach((screenshot) => {
+                        addScreenshot(screenshot.base64Data, screenshot.description, screenshot.index);
                     });
 
                     showAlert('Automation failed. Check logs for details.', 'error');

@@ -354,42 +354,51 @@ public class WorklogService {
         if (textFields.size() >= 3) {
             addStep(automationSteps, "Filling 'Tasks completed' field (field 1/3)...");
             WebElement tasksField = textFields.get(0);
+            // Clear field completely
             js.executeScript("arguments[0].innerHTML = '';", tasksField);
-            Thread.sleep(200);
-            String tasksHtml = "<p><strong>Tasks completed today</strong></p><ul><li>" +
-                    (config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned.") +
+            js.executeScript("arguments[0].textContent = '';", tasksField);
+            Thread.sleep(300);
+            String tasksHtml = "<p><strong>📋 Tasks completed today</strong></p><ul><li>" +
+                    (config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned today") +
                     "</li></ul>";
             js.executeScript("arguments[0].innerHTML = arguments[1];", tasksField, tasksHtml);
-            Thread.sleep(300);
+            js.executeScript("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", tasksField);
+            Thread.sleep(500);
 
             addStep(automationSteps, "Filling 'Challenges' field (field 2/3)...");
             WebElement challengesField = textFields.get(1);
+            // Clear field completely
             js.executeScript("arguments[0].innerHTML = '';", challengesField);
-            Thread.sleep(200);
-            String challengesHtml = "<p><strong>Challenges encountered and how you overcame them</strong></p><ul><li>" +
+            js.executeScript("arguments[0].textContent = '';", challengesField);
+            Thread.sleep(300);
+            String challengesHtml = "<p><strong>⚡ Challenges encountered and how you overcame them</strong></p><ul><li>" +
                     (config.getChallenges() != null ? config.getChallenges() : "NA") +
                     "</li></ul>";
             js.executeScript("arguments[0].innerHTML = arguments[1];", challengesField, challengesHtml);
-            Thread.sleep(300);
+            js.executeScript("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", challengesField);
+            Thread.sleep(500);
 
             addStep(automationSteps, "Filling 'Blockers' field (field 3/3)...");
             WebElement blockersField = textFields.get(2);
+            // Clear field completely
             js.executeScript("arguments[0].innerHTML = '';", blockersField);
-            Thread.sleep(200);
-            String blockersHtml = "<p><strong>Blockers faced (challenges that you couldn't overcome)</strong></p><ul><li>" +
+            js.executeScript("arguments[0].textContent = '';", blockersField);
+            Thread.sleep(300);
+            String blockersHtml = "<p><strong>🚧 Blockers faced (challenges that you couldn't overcome)</strong></p><ul><li>" +
                     (config.getBlockers() != null ? config.getBlockers() : "NA") +
                     "</li></ul>";
             js.executeScript("arguments[0].innerHTML = arguments[1];", blockersField, blockersHtml);
-            Thread.sleep(300);
+            js.executeScript("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", blockersField);
+            Thread.sleep(500);
         } else {
             addStep(automationSteps, "WARNING: Expected 3 fields but found " + textFields.size());
-            String tasksHtml = "<p><strong>Tasks completed today</strong></p><ul><li>" +
-                    (config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned.") +
+            String tasksHtml = "<p><strong>📋 Tasks completed today</strong></p><ul><li>" +
+                    (config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned today") +
                     "</li></ul>";
-            String challengesHtml = "<p><strong>Challenges encountered and how you overcame them</strong></p><ul><li>" +
+            String challengesHtml = "<p><strong>⚡ Challenges encountered and how you overcame them</strong></p><ul><li>" +
                     (config.getChallenges() != null ? config.getChallenges() : "NA") +
                     "</li></ul>";
-            String blockersHtml = "<p><strong>Blockers faced (challenges that you couldn't overcome)</strong></p><ul><li>" +
+            String blockersHtml = "<p><strong>🚧 Blockers faced (challenges that you couldn't overcome)</strong></p><ul><li>" +
                     (config.getBlockers() != null ? config.getBlockers() : "NA") +
                     "</li></ul>";
 
@@ -424,9 +433,15 @@ public class WorklogService {
             } catch (Exception ignored) {}
 
             JavascriptExecutor js = (JavascriptExecutor) driver;
+            // Clear field completely
             js.executeScript("arguments[0].innerHTML = '';", field);
-            Thread.sleep(200);
+            js.executeScript("arguments[0].textContent = '';", field);
+            Thread.sleep(300);
+            // Set new content
             js.executeScript("arguments[0].innerHTML = arguments[1];", field, text);
+            // Trigger input event to notify the form
+            js.executeScript("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", field);
+            Thread.sleep(500);
 
         } catch (Exception e) {
             logger.warn("Could not fill field '" + fieldLabel + "': " + e.getMessage());
