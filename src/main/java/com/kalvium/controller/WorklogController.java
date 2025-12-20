@@ -72,4 +72,54 @@ public class WorklogController {
         response.put("message", result);
         return result.startsWith("SUCCESS") ? ResponseEntity.ok(response) : ResponseEntity.badRequest().body(response);
     }
+
+    @GetMapping("/api/users")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> listUsers() {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            java.util.List<AuthConfig> configs = configStorage.loadAllConfigs();
+            java.util.List<Map<String, String>> users = new java.util.ArrayList<>();
+
+            for (int i = 0; i < configs.size(); i++) {
+                AuthConfig config = configs.get(i);
+                Map<String, String> userInfo = new HashMap<>();
+                userInfo.put("id", String.valueOf(i + 1));
+                // Show only last 8 characters of auth_session_id for privacy
+                String authId = config.getAuthSessionId();
+                userInfo.put("authSessionId", authId.length() > 8 ? "..." + authId.substring(authId.length() - 8) : authId);
+                userInfo.put("tasksCompleted", config.getTasksCompleted());
+                userInfo.put("challenges", config.getChallenges());
+                userInfo.put("blockers", config.getBlockers());
+                users.add(userInfo);
+            }
+
+            response.put("status", "success");
+            response.put("userCount", configs.size());
+            response.put("users", users);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("status", "error");
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @PostMapping("/api/reset")
+    @ResponseBody
+    public ResponseEntity<Map<String, String>> resetDatabase() {
+        Map<String, String> response = new HashMap<>();
+        try {
+            int userCount = configStorage.getUserCount();
+            configStorage.resetDatabase();
+            response.put("status", "success");
+            response.put("message", "Database reset successfully. Deleted " + userCount + " user configuration(s).");
+            logger.info("Database reset via API - deleted {} users", userCount);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("status", "error");
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
 }

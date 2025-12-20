@@ -68,24 +68,57 @@ public class ConfigStorageService {
     }
 
     public void saveConfig(AuthConfig config) {
-        String sql = """
-            INSERT OR REPLACE INTO %s
-            (id, auth_session_id, keycloak_identity, keycloak_session, tasks_completed, challenges, blockers, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        // First check if this user already exists (based on auth_session_id)
+        String checkSql = "SELECT id FROM %s WHERE auth_session_id = ?".formatted(TABLE_NAME);
+        String insertSql = """
+            INSERT INTO %s
+            (auth_session_id, keycloak_identity, keycloak_session, tasks_completed, challenges, blockers, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """.formatted(TABLE_NAME);
+        String updateSql = """
+            UPDATE %s
+            SET keycloak_identity = ?, keycloak_session = ?, tasks_completed = ?,
+                challenges = ?, blockers = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE auth_session_id = ?
             """.formatted(TABLE_NAME);
 
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (Connection conn = getConnection()) {
+            // Check if user already exists
+            Integer existingId = null;
+            try (PreparedStatement checkStmt = conn.prepareStatement(checkSql)) {
+                checkStmt.setString(1, config.getAuthSessionId());
+                try (ResultSet rs = checkStmt.executeQuery()) {
+                    if (rs.next()) {
+                        existingId = rs.getInt("id");
+                    }
+                }
+            }
 
-            pstmt.setString(1, config.getAuthSessionId());
-            pstmt.setString(2, config.getKeycloakIdentity());
-            pstmt.setString(3, config.getKeycloakSession());
-            pstmt.setString(4, config.getTasksCompleted());
-            pstmt.setString(5, config.getChallenges());
-            pstmt.setString(6, config.getBlockers());
-
-            pstmt.executeUpdate();
-            logger.info("Configuration saved to database");
+            if (existingId != null) {
+                // Update existing user
+                try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
+                    pstmt.setString(1, config.getKeycloakIdentity());
+                    pstmt.setString(2, config.getKeycloakSession());
+                    pstmt.setString(3, config.getTasksCompleted());
+                    pstmt.setString(4, config.getChallenges());
+                    pstmt.setString(5, config.getBlockers());
+                    pstmt.setString(6, config.getAuthSessionId());
+                    pstmt.executeUpdate();
+                    logger.info("Configuration updated for user (id: {})", existingId);
+                }
+            } else {
+                // Insert new user
+                try (PreparedStatement pstmt = conn.prepareStatement(insertSql)) {
+                    pstmt.setString(1, config.getAuthSessionId());
+                    pstmt.setString(2, config.getKeycloakIdentity());
+                    pstmt.setString(3, config.getKeycloakSession());
+                    pstmt.setString(4, config.getTasksCompleted());
+                    pstmt.setString(5, config.getChallenges());
+                    pstmt.setString(6, config.getBlockers());
+                    pstmt.executeUpdate();
+                    logger.info("New user configuration saved to database");
+                }
+            }
         } catch (SQLException e) {
             logger.error("Failed to save configuration", e);
             throw new RuntimeException("Failed to save configuration", e);
@@ -93,7 +126,7 @@ public class ConfigStorageService {
     }
 
     public AuthConfig loadConfig() {
-        String sql = "SELECT * FROM %s WHERE id = 1".formatted(TABLE_NAME);
+        String sql = "SELECT * FROM %s ORDER BY id LIMIT 1".formatted(TABLE_NAME);
 
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
@@ -116,10 +149,36 @@ public class ConfigStorageService {
         }
     }
 
+    public java.util.List<AuthConfig> loadAllConfigs() {
+        java.util.List<AuthConfig> configs = new java.util.ArrayList<>();
+        String sql = "SELECT * FROM %s ORDER BY id".formatted(TABLE_NAME);
+
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                AuthConfig config = new AuthConfig();
+                config.setAuthSessionId(rs.getString("auth_session_id"));
+                config.setKeycloakIdentity(rs.getString("keycloak_identity"));
+                config.setKeycloakSession(rs.getString("keycloak_session"));
+                config.setTasksCompleted(rs.getString("tasks_completed"));
+                config.setChallenges(rs.getString("challenges"));
+                config.setBlockers(rs.getString("blockers"));
+                configs.add(config);
+            }
+            logger.info("Loaded {} user configurations from database", configs.size());
+            return configs;
+        } catch (SQLException e) {
+            logger.error("Failed to load configurations", e);
+            return configs;
+        }
+    }
+
     public boolean hasConfig() {
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + TABLE_NAME + " WHERE id = 1")) {
+             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + TABLE_NAME)) {
 
             if (rs.next()) {
                 return rs.getInt(1) > 0;
@@ -128,6 +187,35 @@ public class ConfigStorageService {
         } catch (SQLException e) {
             logger.error("Failed to check configuration", e);
             return false;
+        }
+    }
+
+    public int getUserCount() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + TABLE_NAME)) {
+
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+            return 0;
+        } catch (SQLException e) {
+            logger.error("Failed to count users", e);
+            return 0;
+        }
+    }
+
+    public void resetDatabase() {
+        String deleteSql = "DELETE FROM %s".formatted(TABLE_NAME);
+
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+
+            stmt.executeUpdate(deleteSql);
+            logger.info("Database reset successfully - all user configurations deleted");
+        } catch (SQLException e) {
+            logger.error("Failed to reset database", e);
+            throw new RuntimeException("Failed to reset database", e);
         }
     }
 }

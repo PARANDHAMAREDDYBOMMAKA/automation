@@ -21,7 +21,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import com.kalvium.model.AuthConfig;
 import com.kalvium.service.ConfigStorageService;
 import com.kalvium.service.WorklogService;
 
@@ -78,20 +77,53 @@ public class WorklogScheduler {
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
         try {
-            AuthConfig config = configStorage.loadConfig();
-            if (config == null) {
-                logger.error("No configuration found for scheduled run");
+            java.util.List<com.kalvium.model.AuthConfig> configs = configStorage.loadAllConfigs();
+
+            if (configs == null || configs.isEmpty()) {
+                logger.error("No configurations found for scheduled run");
                 return;
             }
 
-            String result = worklogService.submitWorklog(config);
-            logger.info("Automation Result: {}", result);
+            logger.info("Found {} user(s) to process. Processing sequentially...", configs.size());
 
-            if (result.startsWith("SUCCESS")) {
-                logger.info("Scheduled worklog submission completed successfully");
-            } else {
-                logger.error("Scheduled worklog submission failed: {}", result);
+            int successCount = 0;
+            int failCount = 0;
+
+            // Process each user ONE BY ONE (sequential, not parallel)
+            for (int i = 0; i < configs.size(); i++) {
+                com.kalvium.model.AuthConfig config = configs.get(i);
+                logger.info("--- Processing user {}/{} ---", (i + 1), configs.size());
+
+                try {
+                    String result = worklogService.submitWorklog(config);
+                    logger.info("User {}/{} Result: {}", (i + 1), configs.size(), result);
+
+                    if (result.startsWith("SUCCESS")) {
+                        successCount++;
+                        logger.info("User {}/{} worklog submitted successfully", (i + 1), configs.size());
+                    } else {
+                        failCount++;
+                        logger.error("User {}/{} worklog submission failed: {}", (i + 1), configs.size(), result);
+                    }
+                } catch (Exception e) {
+                    failCount++;
+                    logger.error("Error processing user {}/{}: {}", (i + 1), configs.size(), e.getMessage(), e);
+                }
+
+                // Add a small delay between users to avoid overwhelming the server
+                if (i < configs.size() - 1) {
+                    try {
+                        Thread.sleep(5000); // 5 second delay between users
+                        logger.info("Waiting 5 seconds before processing next user...");
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
             }
+
+            logger.info("=== Processing Summary: {} successful, {} failed out of {} total users ===",
+                    successCount, failCount, configs.size());
+
         } catch (Exception e) {
             logger.error("Error during scheduled worklog submission", e);
         }
