@@ -1,13 +1,22 @@
 package com.kalvium.service;
 
-import com.kalvium.model.AuthConfig;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.kalvium.model.AuthConfig;
+
 import jakarta.annotation.PostConstruct;
-import java.nio.file.*;
-import java.sql.*;
 
 @Service
 public class ConfigStorageService {
@@ -19,7 +28,6 @@ public class ConfigStorageService {
     @PostConstruct
     public void init() {
         try {
-            // Try to use /app/data directory (for Render deployment)
             Path appData = Paths.get("/app/data");
             if (Files.isWritable(appData.getParent()) || Files.exists(appData)) {
                 Files.createDirectories(appData);
@@ -28,12 +36,10 @@ public class ConfigStorageService {
                 throw new Exception("Not writable");
             }
         } catch (Exception e) {
-            // Fallback to current directory
             dbPath = "worklog.db";
             logger.info("Using local directory for database: " + dbPath);
         }
 
-        // Initialize database
         initDatabase();
     }
 
@@ -68,7 +74,6 @@ public class ConfigStorageService {
     }
 
     public void saveConfig(AuthConfig config) {
-        // First check if this user already exists (based on auth_session_id)
         String checkSql = "SELECT id FROM %s WHERE auth_session_id = ?".formatted(TABLE_NAME);
         String insertSql = """
             INSERT INTO %s
@@ -83,7 +88,6 @@ public class ConfigStorageService {
             """.formatted(TABLE_NAME);
 
         try (Connection conn = getConnection()) {
-            // Check if user already exists
             Integer existingId = null;
             try (PreparedStatement checkStmt = conn.prepareStatement(checkSql)) {
                 checkStmt.setString(1, config.getAuthSessionId());
@@ -95,7 +99,6 @@ public class ConfigStorageService {
             }
 
             if (existingId != null) {
-                // Update existing user
                 try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
                     pstmt.setString(1, config.getKeycloakIdentity());
                     pstmt.setString(2, config.getKeycloakSession());
@@ -107,7 +110,6 @@ public class ConfigStorageService {
                     logger.info("Configuration updated for user (id: {})", existingId);
                 }
             } else {
-                // Insert new user
                 try (PreparedStatement pstmt = conn.prepareStatement(insertSql)) {
                     pstmt.setString(1, config.getAuthSessionId());
                     pstmt.setString(2, config.getKeycloakIdentity());

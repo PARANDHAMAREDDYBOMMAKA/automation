@@ -61,6 +61,7 @@ public class WorklogScheduler {
 
 
     @Scheduled(fixedRate = 420000)
+    @SuppressWarnings("UseSpecificCatch")
     public void keepAlive() {
         try {
             String healthUrl = appBaseUrl + "/health";
@@ -72,6 +73,7 @@ public class WorklogScheduler {
     }
 
     @Scheduled(cron = "0 30 11 * * MON-FRI", zone = "UTC")
+    @SuppressWarnings("BusyWait")
     public void runDailyWorklogSubmission() {
         logger.info("=== Scheduled Worklog Automation Started at {} ===",
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
@@ -89,34 +91,40 @@ public class WorklogScheduler {
             int successCount = 0;
             int failCount = 0;
 
-            // Process each user ONE BY ONE (sequential, not parallel)
             for (int i = 0; i < configs.size(); i++) {
                 com.kalvium.model.AuthConfig config = configs.get(i);
-                logger.info("--- Processing user {}/{} ---", (i + 1), configs.size());
+                logger.info("=== Processing user {}/{} ===", (i + 1), configs.size());
 
                 try {
+                    logger.info("Starting worklog submission for user {}/{}", (i + 1), configs.size());
+
                     String result = worklogService.submitWorklog(config);
-                    logger.info("User {}/{} Result: {}", (i + 1), configs.size(), result);
+
+                    logger.info("User {}/{} Result: {}", (i + 1), configs.size(),
+                        result.length() > 200 ? result.substring(0, 200) + "..." : result);
 
                     if (result.startsWith("SUCCESS")) {
                         successCount++;
-                        logger.info("User {}/{} worklog submitted successfully", (i + 1), configs.size());
+                        logger.info("✓ User {}/{} worklog submitted successfully", (i + 1), configs.size());
                     } else {
                         failCount++;
-                        logger.error("User {}/{} worklog submission failed: {}", (i + 1), configs.size(), result);
+                        logger.error("✗ User {}/{} worklog submission failed", (i + 1), configs.size());
+                        logger.error("Full error for user {}/{}: {}", (i + 1), configs.size(), result);
                     }
                 } catch (Exception e) {
                     failCount++;
-                    logger.error("Error processing user {}/{}: {}", (i + 1), configs.size(), e.getMessage(), e);
+                    logger.error("✗ Exception processing user {}/{}", (i + 1), configs.size());
+                    logger.error("Exception details: {}", e.getMessage(), e);
                 }
 
-                // Add a small delay between users to avoid overwhelming the server
                 if (i < configs.size() - 1) {
                     try {
-                        Thread.sleep(5000); // 5 second delay between users
-                        logger.info("Waiting 5 seconds before processing next user...");
+                        logger.info("Waiting 7 seconds before processing next user to ensure cleanup...");
+                        Thread.sleep(7000);
+                        logger.info("Ready to process next user");
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
+                        logger.warn("Delay interrupted");
                     }
                 }
             }

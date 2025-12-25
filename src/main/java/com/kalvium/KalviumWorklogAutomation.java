@@ -29,15 +29,10 @@ public class KalviumWorklogAutomation {
         WebDriver driver = null;
 
         try {
-            // Load configuration
             loadConfig();
 
-            // Setup WebDriver
             WebDriverManager.chromedriver().setup();
             ChromeOptions options = new ChromeOptions();
-
-            // Uncomment the line below to run in headless mode (no browser window)
-            // options.addArguments("--headless");
 
             options.addArguments("--start-maximized");
             options.addArguments("--disable-blink-features=AutomationControlled");
@@ -47,14 +42,11 @@ public class KalviumWorklogAutomation {
 
             System.out.println("Starting Kalvium Worklog Automation...");
 
-            // Step 1: Navigate to Kalvium login page
             System.out.println("Navigating to Kalvium...");
             driver.get("https://kalvium.community/internships");
 
-            // Wait for page to load
             Thread.sleep(5000);
 
-            // Step 2: Check if already logged in, if not, attempt automated login
             if (isLoginRequired(driver)) {
                 System.out.println("Login required. Attempting automated login...");
                 System.out.println("Note: This may fail if 2FA is required.");
@@ -63,18 +55,15 @@ public class KalviumWorklogAutomation {
                 System.out.println("✓ Already logged in!");
             }
 
-            // Step 3: Navigate to internships page (if not already there)
             if (!driver.getCurrentUrl().contains("internships")) {
                 System.out.println("Navigating to internships page...");
                 driver.get("https://kalvium.community/internships");
                 Thread.sleep(3000);
             }
 
-            // Step 4: Click on the pending worklog item
             System.out.println("Looking for pending worklog...");
             System.out.println("Current URL: " + driver.getCurrentUrl());
 
-            // Take screenshot for debugging
             try {
                 File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
                 FileHandler.copy(screenshot, new File("debug_screenshot.png"));
@@ -83,11 +72,9 @@ public class KalviumWorklogAutomation {
                 System.out.println("Failed to take screenshot: " + e.getMessage());
             }
 
-            // Try multiple selectors for the pending section
-            WebElement completeButton = null;
+            WebElement completeButton;
 
             try {
-                // Try finding the date row with "-" status (pending)
                 completeButton = wait.until(ExpectedConditions.elementToBeClickable(
                     By.xpath("//td[contains(text(), '-')]/..//button | " +
                              "//tr[contains(., '-')]//button | " +
@@ -97,7 +84,6 @@ public class KalviumWorklogAutomation {
                 ));
                 System.out.println("Found pending worklog button!");
             } catch (Exception e) {
-                // If that doesn't work, try looking for today's date
                 String todayDate = java.time.LocalDate.now().format(
                     java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy")
                 );
@@ -113,14 +99,12 @@ public class KalviumWorklogAutomation {
             completeButton.click();
             Thread.sleep(2000);
 
-            // Step 5: Wait for the popover/modal to appear
             System.out.println("Waiting for worklog form to appear...");
             @SuppressWarnings("unused")
             WebElement worklogPanel = wait.until(ExpectedConditions.presenceOfElementLocated(
                 By.xpath("//*[contains(text(), 'My Worklog')]")
             ));
 
-            // Step 6: Fill the dropdown - "Working out of the Kalvium environment (Classroom)"
             System.out.println("Selecting work status...");
             WebElement dropdown = wait.until(ExpectedConditions.elementToBeClickable(
                 By.xpath("//select | //div[contains(@class, 'select')] | " +
@@ -137,10 +121,8 @@ public class KalviumWorklogAutomation {
             classroomOption.click();
             Thread.sleep(500);
 
-            // Step 7: Fill the text areas
             System.out.println("Filling form fields...");
 
-            // Tasks completed today
             WebElement tasksField = driver.findElement(
                 By.xpath("//*[contains(text(), 'Tasks completed today')]/following::textarea[1] | " +
                          "//*[contains(text(), '📋')]/following::textarea[1]")
@@ -148,15 +130,12 @@ public class KalviumWorklogAutomation {
             tasksField.clear();
             tasksField.sendKeys(config.getProperty("tasks.completed", "Need to complete the tasks assigned."));
 
-            // Challenges encountered
             WebElement challengesField = driver.findElement(
                 By.xpath("//*[contains(text(), 'Challenges encountered')]/following::textarea[1] | " +
                          "//*[contains(text(), '⚡')]/following::textarea[1]")
             );
-            challengesField.clear();
             challengesField.sendKeys(config.getProperty("challenges", "NA"));
 
-            // Blockers faced
             WebElement blockersField = driver.findElement(
                 By.xpath("//*[contains(text(), 'Blockers faced')]/following::textarea[1] | " +
                          "//*[contains(text(), '🚧')]/following::textarea[1]")
@@ -166,7 +145,6 @@ public class KalviumWorklogAutomation {
 
             System.out.println("Form filled successfully!");
 
-            // Step 8: Submit the form
             System.out.println("Submitting the form...");
             WebElement submitButton = wait.until(ExpectedConditions.elementToBeClickable(
                 By.xpath("//button[contains(text(), 'Submit')] | " +
@@ -184,7 +162,6 @@ public class KalviumWorklogAutomation {
             System.err.println("Error occurred: " + e.getMessage());
             e.printStackTrace();
         } finally {
-            // Wait a few seconds before closing to see the result
             try {
                 Thread.sleep(3000);
             } catch (InterruptedException e) {
@@ -208,24 +185,21 @@ public class KalviumWorklogAutomation {
 
     private static boolean isLoginRequired(WebDriver driver) {
         try {
-            // Check if "Continue with Google" button exists (indicates login page)
             driver.findElement(By.xpath("//button[contains(text(), 'Continue with Google')] | " +
                                         "//*[contains(text(), 'Continue with Google')]"));
             return true;
         } catch (Exception e) {
-            // If no login button found, check if we can see the internship content
             try {
                 driver.findElement(By.xpath("//*[contains(text(), 'My Internship')] | " +
                                            "//*[contains(text(), 'My Organization')]"));
-                return false; // Successfully logged in
+                return false;
             } catch (Exception ex) {
-                return true; // Neither login button nor internship content found
+                return true;
             }
         }
     }
 
     private static void performLogin(WebDriver driver, WebDriverWait wait) throws InterruptedException {
-        // Step 1: Click "Continue with Google" button
         System.out.println("Looking for 'Continue with Google' button...");
         WebElement googleButton = wait.until(ExpectedConditions.elementToBeClickable(
             By.xpath("//button[contains(text(), 'Continue with Google')] | " +
@@ -237,9 +211,6 @@ public class KalviumWorklogAutomation {
         System.out.println("Clicked 'Continue with Google'");
 
         Thread.sleep(3000);
-
-        // Step 2: Handle Google login popup/redirect
-        // Switch to Google login window if it's a popup
         String mainWindow = driver.getWindowHandle();
         if (driver.getWindowHandles().size() > 1) {
             for (String windowHandle : driver.getWindowHandles()) {
@@ -250,7 +221,6 @@ public class KalviumWorklogAutomation {
             }
         }
 
-        // Step 3: Enter Google email
         System.out.println("Entering Google email...");
         WebElement googleEmailField = wait.until(ExpectedConditions.presenceOfElementLocated(
             By.xpath("//input[@type='email'] | //input[@id='identifierId'] | //input[@name='identifier']")
@@ -258,29 +228,23 @@ public class KalviumWorklogAutomation {
         googleEmailField.clear();
         googleEmailField.sendKeys(config.getProperty("google.email"));
 
-        // Click Next button
         WebElement nextButton = wait.until(ExpectedConditions.elementToBeClickable(
             By.xpath("//button[contains(., 'Next')] | //*[@id='identifierNext'] | //button[@type='button']")
         ));
         nextButton.click();
         Thread.sleep(3000);
 
-        // Step 4: Enter Google password
         System.out.println("Entering Google password...");
-        // Wait for password field to be both visible and interactable
         WebElement googlePasswordField = wait.until(ExpectedConditions.elementToBeClickable(
             By.xpath("//input[@type='password'] | //input[@name='password'] | //input[@name='Passwd']")
         ));
 
-        // Click on the field first to ensure focus
         googlePasswordField.click();
         Thread.sleep(500);
 
-        // Send password without clearing (as field should be empty)
         googlePasswordField.sendKeys(config.getProperty("google.password"));
         Thread.sleep(1000);
 
-        // Click Next/Sign in button
         WebElement signInButton = wait.until(ExpectedConditions.elementToBeClickable(
             By.xpath("//button[contains(., 'Next')] | //*[@id='passwordNext'] | " +
                      "//button[contains(., 'Sign in')] | //button[@type='button']")
@@ -290,12 +254,10 @@ public class KalviumWorklogAutomation {
         System.out.println("Waiting for authentication to complete...");
         Thread.sleep(5000);
 
-        // Switch back to main window if we were in a popup
         if (driver.getWindowHandles().size() > 1) {
             driver.switchTo().window(mainWindow);
         }
 
-        // Wait for redirect back to Kalvium
         Thread.sleep(3000);
 
         System.out.println("Login completed!");
