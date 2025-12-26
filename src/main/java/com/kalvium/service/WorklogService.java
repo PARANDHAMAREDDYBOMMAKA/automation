@@ -234,6 +234,48 @@ public class WorklogService {
         logger.info(step);
     }
 
+    private String escapeHtml(String text) {
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
+    }
+
+    private String updateListItems(String html, String newContent) {
+        int ulStart = html.indexOf("<ul");
+        if (ulStart == -1) {
+            return html;
+        }
+
+        int ulTagEnd = html.indexOf(">", ulStart) + 1;
+        int ulEnd = html.indexOf("</ul>", ulStart);
+
+        if (ulEnd == -1) {
+            return html;
+        }
+
+        String ulTag = html.substring(ulStart, ulTagEnd);
+
+        StringBuilder result = new StringBuilder();
+        result.append(html.substring(0, ulStart));
+        result.append(ulTag);
+
+        String[] lines = newContent.split("\\r?\\n");
+        for (String line : lines) {
+            String trimmedLine = line.trim();
+            if (!trimmedLine.isEmpty()) {
+                result.append("<li class=\"list-item\"><p>")
+                      .append(escapeHtml(trimmedLine))
+                      .append("</p></li>");
+            }
+        }
+
+        result.append(html.substring(ulEnd));
+
+        return result.toString();
+    }
+
     @SuppressWarnings("UseSpecificCatch")
     private void captureScreenshot(WebDriver driver, List<Screenshot> screenshots, String description) {
         try {
@@ -364,72 +406,42 @@ public class WorklogService {
             }
         }
 
-        addStep(automationSteps, "Finding all text input fields...");
+        String tasksContent = config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned.";
+        String challengesContent = config.getChallenges() != null ? config.getChallenges() : "NA";
+        String blockersContent = config.getBlockers() != null ? config.getBlockers() : "NA";
 
-        List<WebElement> textFields = new java.util.ArrayList<>();
-        try {
-            textFields = driver.findElements(By.xpath("//div[@contenteditable='true']"));
-            addStep(automationSteps, "Strategy 1: Found " + textFields.size() + " contenteditable fields");
-        } catch (Exception e1) {
-            addStep(automationSteps, "Strategy 1 failed: " + e1.getMessage());
-        }
+        addStep(automationSteps, "Filling 'Tasks completed today' field...");
+        WebElement tasksField = wait.until(ExpectedConditions.presenceOfElementLocated(
+            By.xpath("//*[contains(text(), '📋 Tasks completed today')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true'] | " +
+                     "//*[contains(text(), 'Tasks completed today')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true']")
+        ));
+        String tasksHtml = (String) js.executeScript("return arguments[0].innerHTML;", tasksField);
+        String updatedTasksHtml = updateListItems(tasksHtml, tasksContent);
+        js.executeScript("arguments[0].innerHTML = arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", tasksField, updatedTasksHtml);
+        addStep(automationSteps, "Tasks field HTML after update: " + updatedTasksHtml);
+        Thread.sleep(500);
 
-        if (textFields.isEmpty()) {
-            try {
-                textFields = driver.findElements(By.xpath("//div[contains(@class, 'editor') or contains(@class, 'content')][@contenteditable='true']"));
-                addStep(automationSteps, "Strategy 2: Found " + textFields.size() + " editor fields");
-            } catch (Exception e2) {
-                addStep(automationSteps, "Strategy 2 failed: " + e2.getMessage());
-            }
-        }
+        addStep(automationSteps, "Filling 'Challenges encountered' field...");
+        WebElement challengesField = wait.until(ExpectedConditions.presenceOfElementLocated(
+            By.xpath("//*[contains(text(), '⚡ Challenges encountered')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true'] | " +
+                     "//*[contains(text(), 'Challenges encountered')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true']")
+        ));
+        String challengesHtml = (String) js.executeScript("return arguments[0].innerHTML;", challengesField);
+        String updatedChallengesHtml = updateListItems(challengesHtml, challengesContent);
+        js.executeScript("arguments[0].innerHTML = arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", challengesField, updatedChallengesHtml);
+        addStep(automationSteps, "Challenges field HTML after update: " + updatedChallengesHtml);
+        Thread.sleep(500);
 
-        if (textFields.isEmpty()) {
-            try {
-                textFields = driver.findElements(By.xpath("//textarea"));
-                addStep(automationSteps, "Strategy 3: Found " + textFields.size() + " textarea fields");
-            } catch (Exception e3) {
-                addStep(automationSteps, "Strategy 3 failed: " + e3.getMessage());
-            }
-        }
-
-        if (textFields.size() >= 3) {
-            String tasksContent = config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned.";
-            String challengesContent = config.getChallenges() != null ? config.getChallenges() : "NA";
-            String blockersContent = config.getBlockers() != null ? config.getBlockers() : "NA";
-
-            String tasksHtml = "<ul><li>" + tasksContent + "</li></ul>";
-            String challengesHtml = "<ul><li>" + challengesContent + "</li></ul>";
-            String blockersHtml = "<ul><li>" + blockersContent + "</li></ul>";
-
-            addStep(automationSteps, "Filling 'Tasks completed' field (field 1/3)...");
-            WebElement tasksField = textFields.get(0);
-            clearAndFillField(js, tasksField, tasksHtml);
-            Thread.sleep(800);
-
-            addStep(automationSteps, "Filling 'Challenges' field (field 2/3)...");
-            WebElement challengesField = textFields.get(1);
-            clearAndFillField(js, challengesField, challengesHtml);
-            Thread.sleep(800);
-
-            addStep(automationSteps, "Filling 'Blockers' field (field 3/3)...");
-            WebElement blockersField = textFields.get(2);
-            clearAndFillField(js, blockersField, blockersHtml);
-            Thread.sleep(800);
-        } else {
-            addStep(automationSteps, "WARNING: Expected 3 fields but found " + textFields.size());
-
-            String tasksContent = config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned.";
-            String challengesContent = config.getChallenges() != null ? config.getChallenges() : "NA";
-            String blockersContent = config.getBlockers() != null ? config.getBlockers() : "NA";
-
-            String tasksHtml = "<ul><li>" + tasksContent + "</li></ul>";
-            String challengesHtml = "<ul><li>" + challengesContent + "</li></ul>";
-            String blockersHtml = "<ul><li>" + blockersContent + "</li></ul>";
-
-            fillFieldByLabel(driver, js, "Tasks completed today", tasksHtml, automationSteps);
-            fillFieldByLabel(driver, js, "Challenges encountered", challengesHtml, automationSteps);
-            fillFieldByLabel(driver, js, "Blockers faced", blockersHtml, automationSteps);
-        }
+        addStep(automationSteps, "Filling 'Blockers faced' field...");
+        WebElement blockersField = wait.until(ExpectedConditions.presenceOfElementLocated(
+            By.xpath("//*[contains(text(), '🚧 Blockers faced')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true'] | " +
+                     "//*[contains(text(), 'Blockers faced')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true']")
+        ));
+        String blockersHtml = (String) js.executeScript("return arguments[0].innerHTML;", blockersField);
+        String updatedBlockersHtml = updateListItems(blockersHtml, blockersContent);
+        js.executeScript("arguments[0].innerHTML = arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", blockersField, updatedBlockersHtml);
+        addStep(automationSteps, "Blockers field HTML after update: " + updatedBlockersHtml);
+        Thread.sleep(500);
 
         addStep(automationSteps, "All form fields filled");
     }
@@ -464,7 +476,7 @@ public class WorklogService {
         }
     }
 
-    @SuppressWarnings("UseSpecificCatch")
+    @SuppressWarnings({"UseSpecificCatch", "unused"})
     private void fillFieldByLabel(WebDriver driver, JavascriptExecutor js, String labelText, String htmlContent, List<String> automationSteps) {
         try {
             addStep(automationSteps, "Looking for field with label: " + labelText);
@@ -490,6 +502,45 @@ public class WorklogService {
 
             if (field != null) {
                 clearAndFillField(js, field, htmlContent);
+                addStep(automationSteps, "Successfully filled field: " + labelText);
+            } else {
+                addStep(automationSteps, "ERROR: Could not find field for: " + labelText);
+            }
+
+        } catch (Exception e) {
+            addStep(automationSteps, "ERROR filling field '" + labelText + "': " + e.getMessage());
+            logger.warn("Could not fill field '" + labelText + "': " + e.getMessage());
+        }
+    }
+
+    @SuppressWarnings({"UseSpecificCatch", "unused"})
+    private void fillFieldByLabelWithUpdate(WebDriver driver, JavascriptExecutor js, String labelText, String content, List<String> automationSteps) {
+        try {
+            addStep(automationSteps, "Looking for field with label: " + labelText);
+
+            WebElement field = null;
+
+            String[] xpaths = {
+                "//*[contains(text(), '" + labelText + "')]/following::div[@contenteditable='true'][1]",
+                "//*[contains(text(), '" + labelText + "')]/following::textarea[1]",
+                "//*[contains(text(), '" + labelText + "')]/..//div[@contenteditable='true']",
+                "//*[contains(text(), '" + labelText + "')]//following-sibling::div[@contenteditable='true']",
+                "//div[contains(., '" + labelText + "')]/following::div[@contenteditable='true'][1]"
+            };
+
+            for (String xpath : xpaths) {
+                try {
+                    field = driver.findElement(By.xpath(xpath));
+                    addStep(automationSteps, "Found field using xpath strategy");
+                    break;
+                } catch (NoSuchElementException e) {
+                }
+            }
+
+            if (field != null) {
+                String existingHtml = (String) js.executeScript("return arguments[0].innerHTML;", field);
+                String updatedHtml = updateListItems(existingHtml, content);
+                js.executeScript("arguments[0].innerHTML = arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", field, updatedHtml);
                 addStep(automationSteps, "Successfully filled field: " + labelText);
             } else {
                 addStep(automationSteps, "ERROR: Could not find field for: " + labelText);
