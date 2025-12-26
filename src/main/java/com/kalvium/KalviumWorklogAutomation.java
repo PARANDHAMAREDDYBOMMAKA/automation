@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.Properties;
 
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.WebDriver;
@@ -23,6 +24,48 @@ public class KalviumWorklogAutomation {
 
     private static final String CONFIG_FILE = "src/main/resources/config.properties";
     private static Properties config;
+
+    private static String updateListItems(String html, String newContent) {
+        int ulStart = html.indexOf("<ul");
+        if (ulStart == -1) {
+            return html;
+        }
+
+        int ulTagEnd = html.indexOf(">", ulStart) + 1;
+        int ulEnd = html.indexOf("</ul>", ulStart);
+
+        if (ulEnd == -1) {
+            return html;
+        }
+
+        String ulTag = html.substring(ulStart, ulTagEnd);
+
+        StringBuilder result = new StringBuilder();
+        result.append(html.substring(0, ulStart));
+        result.append(ulTag);
+
+        String[] lines = newContent.split("\\r?\\n");
+        for (String line : lines) {
+            String trimmedLine = line.trim();
+            if (!trimmedLine.isEmpty()) {
+                result.append("<li class=\"list-item\"><p>")
+                      .append(escapeHtml(trimmedLine))
+                      .append("</p></li>");
+            }
+        }
+
+        result.append(html.substring(ulEnd));
+
+        return result.toString();
+    }
+
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
+    }
 
     @SuppressWarnings({"UseSpecificCatch", "CallToPrintStackTrace"})
     public static void main(String[] args) {
@@ -123,25 +166,43 @@ public class KalviumWorklogAutomation {
 
             System.out.println("Filling form fields...");
 
-            WebElement tasksField = driver.findElement(
-                By.xpath("//*[contains(text(), 'Tasks completed today')]/following::textarea[1] | " +
-                         "//*[contains(text(), '📋')]/following::textarea[1]")
-            );
-            tasksField.clear();
-            tasksField.sendKeys(config.getProperty("tasks.completed", "Need to complete the tasks assigned."));
+            JavascriptExecutor js = (JavascriptExecutor) driver;
 
-            WebElement challengesField = driver.findElement(
-                By.xpath("//*[contains(text(), 'Challenges encountered')]/following::textarea[1] | " +
-                         "//*[contains(text(), '⚡')]/following::textarea[1]")
-            );
-            challengesField.sendKeys(config.getProperty("challenges", "NA"));
+            WebElement tasksField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//*[contains(text(), '📋 Tasks completed today')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true'] | " +
+                         "//*[contains(text(), 'Tasks completed today')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true']")
+            ));
 
-            WebElement blockersField = driver.findElement(
-                By.xpath("//*[contains(text(), 'Blockers faced')]/following::textarea[1] | " +
-                         "//*[contains(text(), '🚧')]/following::textarea[1]")
-            );
-            blockersField.clear();
-            blockersField.sendKeys(config.getProperty("blockers", "NA"));
+            String tasksHtml = (String) js.executeScript("return arguments[0].innerHTML;", tasksField);
+            String updatedTasksHtml = updateListItems(tasksHtml, config.getProperty("tasks.completed", "Need to complete the tasks assigned."));
+            js.executeScript("arguments[0].innerHTML = arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", tasksField, updatedTasksHtml);
+            System.out.println("\n=== Tasks Field HTML ===");
+            System.out.println(updatedTasksHtml);
+            Thread.sleep(500);
+
+            WebElement challengesField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//*[contains(text(), '⚡ Challenges encountered')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true'] | " +
+                         "//*[contains(text(), 'Challenges encountered')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true']")
+            ));
+
+            String challengesHtml = (String) js.executeScript("return arguments[0].innerHTML;", challengesField);
+            String updatedChallengesHtml = updateListItems(challengesHtml, config.getProperty("challenges", "NA"));
+            js.executeScript("arguments[0].innerHTML = arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", challengesField, updatedChallengesHtml);
+            System.out.println("\n=== Challenges Field HTML ===");
+            System.out.println(updatedChallengesHtml);
+            Thread.sleep(500);
+
+            WebElement blockersField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//*[contains(text(), '🚧 Blockers faced')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true'] | " +
+                         "//*[contains(text(), 'Blockers faced')]/ancestor::div[contains(@class, 'prose')]//div[@contenteditable='true']")
+            ));
+
+            String blockersHtml = (String) js.executeScript("return arguments[0].innerHTML;", blockersField);
+            String updatedBlockersHtml = updateListItems(blockersHtml, config.getProperty("blockers", "NA"));
+            js.executeScript("arguments[0].innerHTML = arguments[1]; arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", blockersField, updatedBlockersHtml);
+            System.out.println("\n=== Blockers Field HTML ===");
+            System.out.println(updatedBlockersHtml);
+            Thread.sleep(500);
 
             System.out.println("Form filled successfully!");
 
