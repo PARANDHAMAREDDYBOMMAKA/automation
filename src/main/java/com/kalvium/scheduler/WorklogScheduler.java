@@ -73,7 +73,7 @@ public class WorklogScheduler {
     }
 
     // Scheduled time set to 5:15 PM IST (Asia/Kolkata) on weekdays
-    @Scheduled(cron = "0 25 17 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "0 40 17 * * MON-FRI", zone = "Asia/Kolkata")
     @SuppressWarnings("BusyWait")
     public void runDailyWorklogSubmission() {
         logger.info("=== Scheduled Worklog Automation Started at {} ===",
