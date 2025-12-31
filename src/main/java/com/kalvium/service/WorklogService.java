@@ -9,6 +9,7 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.Cookie;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.OutputType;
+import org.openqa.selenium.PageLoadStrategy;
 import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -90,9 +91,11 @@ public class WorklogService {
                     "--disable-offline-load-stale-cache",
                     "--js-flags=--max-old-space-size=200,--max-semi-space-size=1"
             );
+            options.setPageLoadStrategy(PageLoadStrategy.EAGER);
 
             addStep(automationSteps, "Opening Chrome browser...");
             driver = new ChromeDriver(options);
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(60));
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
 
             addStep(automationSteps, "Navigating to kalvium.community...");

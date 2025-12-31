@@ -6,6 +6,10 @@ services:
     dockerfilePath: ./Dockerfile
     autoDeploy: true
     healthCheckPath: /health
+    disk:
+      name: worklog-data
+      mountPath: /app/data
+      sizeGB: 1
     envVars:
       - key: APP_BASE_URL
         sync: false
