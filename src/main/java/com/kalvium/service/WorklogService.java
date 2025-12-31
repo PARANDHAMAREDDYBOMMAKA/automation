@@ -95,7 +95,7 @@ public class WorklogService {
 
             addStep(automationSteps, "Opening Chrome browser...");
             driver = new ChromeDriver(options);
-            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(60));
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(120));
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
 
             addStep(automationSteps, "Navigating to kalvium.community...");

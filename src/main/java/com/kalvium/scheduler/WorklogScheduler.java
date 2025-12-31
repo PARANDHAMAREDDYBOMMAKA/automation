@@ -120,8 +120,8 @@ public class WorklogScheduler {
 
                 if (i < configs.size() - 1) {
                     try {
-                        logger.info("Waiting 7 seconds before processing next user to ensure cleanup...");
-                        Thread.sleep(7000);
+                        logger.info("Waiting 15 seconds before processing next user to ensure cleanup...");
+                        Thread.sleep(15000);
                         logger.info("Ready to process next user");
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
