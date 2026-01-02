@@ -34,66 +34,17 @@ public class SupabaseConfigStorageService {
             return;
         }
 
-        initDatabase();
+        verifyDatabaseConnection();
     }
 
-    private void initDatabase() {
+    private void verifyDatabaseConnection() {
         try (Connection conn = getConnection()) {
-            String createConfigTableSQL = """
-                CREATE TABLE IF NOT EXISTS %s (
-                    id SERIAL PRIMARY KEY,
-                    auth_session_id TEXT NOT NULL,
-                    keycloak_identity TEXT NOT NULL,
-                    keycloak_session TEXT NOT NULL,
-                    tasks_completed TEXT,
-                    challenges TEXT,
-                    blockers TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """.formatted(TABLE_NAME);
-
-            String createScreenshotsTableSQL = """
-                CREATE TABLE IF NOT EXISTS %s (
-                    id SERIAL PRIMARY KEY,
-                    user_auth_session_id TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    screenshot_data BYTEA NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_auth_session_id) REFERENCES %s(auth_session_id) ON DELETE CASCADE
-                )
-                """.formatted(SCREENSHOTS_TABLE, TABLE_NAME);
-
-            String createConfigIndexSQL = """
-                CREATE INDEX IF NOT EXISTS idx_worklog_config_auth_session_id
-                ON %s(auth_session_id)
-                """.formatted(TABLE_NAME);
-
-            String createScreenshotsIndexSQL = """
-                CREATE INDEX IF NOT EXISTS idx_worklog_screenshots_user
-                ON %s(user_auth_session_id, created_at DESC)
-                """.formatted(SCREENSHOTS_TABLE);
-
             try (Statement stmt = conn.createStatement()) {
-                // Create config table
-                stmt.execute(createConfigTableSQL);
-                logger.info("✓ Table 'worklog_config' created/verified successfully");
-
-                stmt.execute(createConfigIndexSQL);
-                logger.info("✓ Index 'idx_worklog_config_auth_session_id' created/verified successfully");
-
-                // Create screenshots table
-                stmt.execute(createScreenshotsTableSQL);
-                logger.info("✓ Table 'worklog_screenshots' created/verified successfully");
-
-                stmt.execute(createScreenshotsIndexSQL);
-                logger.info("✓ Index 'idx_worklog_screenshots_user' created/verified successfully");
-
-                // Verify tables exist by counting rows
+                // Just verify connection and count existing data
                 try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + TABLE_NAME)) {
                     if (rs.next()) {
                         int rowCount = rs.getInt(1);
-                        logger.info("✓ Database initialized successfully. Users count: {}", rowCount);
+                        logger.info("✓ Connected to database successfully. Users count: {}", rowCount);
                     }
                 }
 
@@ -105,7 +56,10 @@ public class SupabaseConfigStorageService {
                 }
             }
         } catch (SQLException e) {
-            logger.error("Failed to initialize database", e);
+            logger.error("Failed to connect to database: {}", e.getMessage());
+            logger.error("Make sure your tables exist in Supabase:");
+            logger.error("  - worklog_config (for user credentials)");
+            logger.error("  - worklog_screenshots (for screenshots)");
         }
     }
 
