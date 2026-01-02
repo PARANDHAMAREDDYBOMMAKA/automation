@@ -19,6 +19,7 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.kalvium.model.AuthConfig;
@@ -29,6 +30,9 @@ import io.github.bonigarcia.wdm.WebDriverManager;
 public class WorklogService {
 
     private static final Logger logger = LoggerFactory.getLogger(WorklogService.class);
+
+    @Autowired
+    private SupabaseConfigStorageService supabaseStorage;
 
     private static class Screenshot {
         String description;
@@ -109,7 +113,7 @@ public class WorklogService {
             addStep(automationSteps, "Navigating to internships page...");
             driver.get("https://kalvium.community/internships");
             Thread.sleep(3000);
-            captureScreenshot(driver, screenshots, "Internships page loaded");
+            captureScreenshot(driver, screenshots, "Internships page loaded", config.getAuthSessionId());
 
             addStep(automationSteps, "Checking Pending worklogs section...");
             JavascriptExecutor js = (JavascriptExecutor) driver;
@@ -162,11 +166,11 @@ public class WorklogService {
                     By.xpath("//*[contains(text(), 'My Worklog')]")));
             addStep(automationSteps, "Form appeared");
             Thread.sleep(2000);
-            captureScreenshot(driver, screenshots, "Worklog form opened");
+            captureScreenshot(driver, screenshots, "Worklog form opened", config.getAuthSessionId());
 
             addStep(automationSteps, "Filling out the form...");
             fillForm(driver, wait, config, automationSteps);
-            captureScreenshot(driver, screenshots, "Form filled");
+            captureScreenshot(driver, screenshots, "Form filled", config.getAuthSessionId());
 
             addStep(automationSteps, "Submitting the form...");
             Thread.sleep(2000);
@@ -189,7 +193,7 @@ public class WorklogService {
             Thread.sleep(3000);
 
             addStep(automationSteps, "Worklog submitted successfully!");
-            captureScreenshot(driver, screenshots, "Final confirmation");
+            captureScreenshot(driver, screenshots, "Final confirmation", config.getAuthSessionId());
             logger.info("Worklog submitted successfully");
             return buildSuccessResponse(automationSteps, screenshots);
 
@@ -198,7 +202,8 @@ public class WorklogService {
             logger.error("Error: " + e.getMessage(), e);
             if (driver != null) {
                 try {
-                    captureScreenshot(driver, screenshots, "Error state");
+                    String authId = (config != null) ? config.getAuthSessionId() : null;
+                    captureScreenshot(driver, screenshots, "Error state", authId);
                 } catch (Exception screenshotError) {
                     logger.warn("Failed to capture error screenshot: " + screenshotError.getMessage());
                 }
@@ -346,13 +351,26 @@ public class WorklogService {
         return html;
     }
 
-    @SuppressWarnings("UseSpecificCatch")
+    @SuppressWarnings({"UseSpecificCatch", "unused"})
     private void captureScreenshot(WebDriver driver, List<Screenshot> screenshots, String description) {
+        captureScreenshot(driver, screenshots, description, null);
+    }
+
+    @SuppressWarnings("UseSpecificCatch")
+    private void captureScreenshot(WebDriver driver, List<Screenshot> screenshots, String description, String authSessionId) {
         try {
             byte[] screenshotBytes = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
             String base64Screenshot = Base64.getEncoder().encodeToString(screenshotBytes);
             screenshots.add(new Screenshot(description, base64Screenshot));
             logger.info("Screenshot captured: " + description);
+
+            if (authSessionId != null && supabaseStorage != null) {
+                try {
+                    supabaseStorage.saveScreenshot(authSessionId, description, screenshotBytes);
+                } catch (Exception dbError) {
+                    logger.warn("Failed to save screenshot to database: " + dbError.getMessage());
+                }
+            }
         } catch (Exception e) {
             logger.warn("Failed to capture screenshot '" + description + "': " + e.getMessage());
         }
@@ -395,6 +413,9 @@ public class WorklogService {
     }
 
     private void injectCookies(WebDriver driver, AuthConfig config) {
+        // Clear all existing cookies to prevent user session conflicts
+        driver.manage().deleteAllCookies();
+
         driver.manage().addCookie(new Cookie.Builder("AUTH_SESSION_ID", config.getAuthSessionId())
                 .domain("kalvium.community").path("/").isSecure(true).build());
         driver.manage().addCookie(new Cookie.Builder("AUTH_SESSION_ID_LEGACY", config.getAuthSessionId())

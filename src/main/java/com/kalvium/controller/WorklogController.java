@@ -1,7 +1,7 @@
 package com.kalvium.controller;
 
 import com.kalvium.model.AuthConfig;
-import com.kalvium.service.ConfigStorageService;
+import com.kalvium.service.SupabaseConfigStorageService;
 import com.kalvium.service.WorklogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +22,7 @@ public class WorklogController {
     private WorklogService worklogService;
 
     @Autowired
-    private ConfigStorageService configStorage;
+    private SupabaseConfigStorageService configStorage;
 
     @GetMapping("/")
     public String index() {

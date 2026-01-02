@@ -21,7 +21,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import com.kalvium.service.ConfigStorageService;
+import com.kalvium.service.SupabaseConfigStorageService;
 import com.kalvium.service.WorklogService;
 
 @Component
@@ -33,7 +33,7 @@ public class WorklogScheduler {
     private WorklogService worklogService;
 
     @Autowired
-    private ConfigStorageService configStorage;
+    private SupabaseConfigStorageService configStorage;
 
     @Value("${app.base.url:http://localhost:8080}")
     private String appBaseUrl;
