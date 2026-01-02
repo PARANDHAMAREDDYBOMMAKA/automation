@@ -1,15 +1,16 @@
 package com.kalvium.service;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
+import javax.sql.DataSource;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.kalvium.model.AuthConfig;
@@ -23,21 +24,13 @@ public class SupabaseConfigStorageService {
     private static final String TABLE_NAME = "worklog_config";
     private static final String SCREENSHOTS_TABLE = "worklog_screenshots";
 
-    @Value("${database.url:}")
-    private String databaseUrl;
+    @Autowired(required = false)
+    private DataSource dataSource;
 
     @PostConstruct
     public void init() {
-        // Register PostgreSQL driver
-        try {
-            Class.forName("org.postgresql.Driver");
-        } catch (ClassNotFoundException e) {
-            logger.error("PostgreSQL driver not found", e);
-            return;
-        }
-
-        if (databaseUrl == null || databaseUrl.isEmpty()) {
-            logger.error("DATABASE_URL environment variable not set");
+        if (dataSource == null) {
+            logger.error("DataSource not configured. Please set DATABASE_URL environment variable.");
             return;
         }
 
@@ -117,7 +110,10 @@ public class SupabaseConfigStorageService {
     }
 
     private Connection getConnection() throws SQLException {
-        return DriverManager.getConnection(databaseUrl);
+        if (dataSource == null) {
+            throw new SQLException("DataSource is not configured");
+        }
+        return dataSource.getConnection();
     }
 
     public void saveScreenshot(String authSessionId, String description, byte[] screenshotData) {
