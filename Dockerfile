@@ -15,15 +15,37 @@ RUN apt-get update && apt-get install -y \
     && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/* \
+    && rm -rf /var/cache/apt/archives/*
 
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data \
+    && mkdir -p /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix
+
+# Create a startup script that clears memory before running
+RUN echo '#!/bin/sh\n\
+# Clear system caches and free memory\n\
+sync\n\
+echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true\n\
+\n\
+# Clean up temp directories\n\
+rm -rf /tmp/.org.chromium.Chromium.* 2>/dev/null || true\n\
+rm -rf /tmp/.X11-unix/* 2>/dev/null || true\n\
+rm -rf /tmp/chrome* 2>/dev/null || true\n\
+\n\
+# Start the application\n\
+exec java $JAVA_OPTS -jar /app/app.jar\n\
+' > /app/startup.sh && chmod +x /app/startup.sh
+
 EXPOSE 8080
 
-ENV JAVA_OPTS="-Xms128m -Xmx300m \
-    -XX:MetaspaceSize=64m -XX:MaxMetaspaceSize=128m \
+ENV JAVA_OPTS="-Xms256m -Xmx512m \
+    -XX:MetaspaceSize=96m -XX:MaxMetaspaceSize=192m \
     -XX:+UseG1GC -XX:MaxGCPauseMillis=200 \
     -XX:+UseStringDeduplication \
     -XX:+OptimizeStringConcat \
@@ -34,4 +56,4 @@ ENV JAVA_OPTS="-Xms128m -Xmx300m \
     -XX:+ExitOnOutOfMemoryError \
     -Djava.security.egd=file:/dev/./urandom"
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["/app/startup.sh"]

@@ -61,6 +61,7 @@ public class WorklogService {
             options.addArguments(
                     "--headless=new",
                     "--no-sandbox",
+                    "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-blink-features=AutomationControlled",
                     "--window-size=1280,720",
@@ -75,7 +76,7 @@ public class WorklogService {
                     "--safebrowsing-disable-auto-update",
                     "--disable-client-side-phishing-detection",
                     "--disable-component-extensions-with-background-pages",
-                    "--disable-features=VizDisplayCompositor",
+                    "--disable-features=VizDisplayCompositor,site-per-process",
                     "--disable-software-rasterizer",
                     "--disable-dev-tools",
                     "--disable-animations",
@@ -93,14 +94,21 @@ public class WorklogService {
                     "--disable-cache",
                     "--disable-application-cache",
                     "--disable-offline-load-stale-cache",
-                    "--js-flags=--max-old-space-size=200,--max-semi-space-size=1"
+                    "--js-flags=--max-old-space-size=200,--max-semi-space-size=1",
+                    "--remote-debugging-port=9222",
+                    "--disable-web-security",
+                    "--ignore-certificate-errors",
+                    "--disable-features=IsolateOrigins",
+                    "--disable-site-isolation-trials",
+                    "--single-process"
             );
-            options.setPageLoadStrategy(PageLoadStrategy.EAGER);
+            options.setPageLoadStrategy(PageLoadStrategy.NORMAL);
 
             addStep(automationSteps, "Opening Chrome browser...");
             driver = new ChromeDriver(options);
-            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(120));
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(180));
+            driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(60));
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
 
             addStep(automationSteps, "Navigating to kalvium.community...");
             driver.get("https://kalvium.community");
@@ -225,11 +233,22 @@ public class WorklogService {
                 }
             }
 
+            // Clean up Chrome temp files to free memory
+            try {
+                Runtime.getRuntime().exec(new String[]{"sh", "-c", "rm -rf /tmp/.org.chromium.Chromium.* /tmp/chrome* 2>/dev/null || true"});
+                logger.info("Cleaned up Chrome temporary files");
+            } catch (Exception cleanupError) {
+                logger.warn("Could not clean up temp files: " + cleanupError.getMessage());
+            }
+
+            // Force garbage collection to free memory
+            System.gc();
+
             automationSteps.clear();
             screenshots.clear();
 
             try {
-                Thread.sleep(1000);
+                Thread.sleep(2000);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             }
