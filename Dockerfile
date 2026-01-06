@@ -25,7 +25,12 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 RUN mkdir -p /app/data \
     && mkdir -p /tmp/.X11-unix \
-    && chmod 1777 /tmp/.X11-unix
+    && chmod 1777 /tmp/.X11-unix \
+    && mkdir -p /dev/shm \
+    && chmod 1777 /dev/shm
+
+# Configure shared memory for Chrome
+VOLUME /dev/shm
 
 # Create a startup script that clears memory before running
 RUN echo '#!/bin/sh\n\
