@@ -73,7 +73,7 @@ public class WorklogScheduler {
     }
 
     // Scheduled time set to 5:00 PM IST (Asia/Kolkata) on weekdays
-    @Scheduled(cron = "0 30 17 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "0 0 17 * * MON-FRI", zone = "Asia/Kolkata")
     @SuppressWarnings("BusyWait")
     public void runDailyWorklogSubmission() {
         logger.info("=== Scheduled Worklog Automation Started at {} ===",
@@ -120,8 +120,8 @@ public class WorklogScheduler {
 
                 if (i < configs.size() - 1) {
                     try {
-                        logger.info("Waiting 15 seconds before processing next user to ensure cleanup...");
-                        Thread.sleep(15000);
+                        logger.info("Waiting 30 seconds before processing next user to ensure cleanup...");
+                        Thread.sleep(30000);
                         logger.info("Ready to process next user");
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();

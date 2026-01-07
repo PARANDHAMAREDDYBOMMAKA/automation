@@ -55,6 +55,10 @@ public class WorklogService {
                 return "ERROR: No configuration provided.";
             }
 
+            addStep(automationSteps, "Killing any existing Chrome processes...");
+            killAllChromeProcesses();
+            Thread.sleep(3000);
+
             addStep(automationSteps, "Setting up ChromeDriver...");
             WebDriverManager.chromedriver().setup();
             ChromeOptions options = new ChromeOptions();
@@ -77,20 +81,41 @@ public class WorklogService {
                     "--disable-component-update",
                     "--disable-cache",
                     "--disable-application-cache",
-                    "--remote-debugging-port=9222",
-                    "--ignore-certificate-errors"
+                    "--ignore-certificate-errors",
+                    "--disable-logging",
+                    "--log-level=3",
+                    "--silent",
+                    "--disable-crash-reporter",
+                    "--disable-in-process-stack-traces",
+                    "--disable-logging-redirect",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-background-timer-throttling",
+                    "--disable-ipc-flooding-protection",
+                    "--metrics-recording-only",
+                    "--mute-audio",
+                    "--no-default-browser-check",
+                    "--no-pings",
+                    "--password-store=basic",
+                    "--use-mock-keychain",
+                    "--force-device-scale-factor=1"
             );
-            options.setPageLoadStrategy(PageLoadStrategy.NORMAL);
+            options.setPageLoadStrategy(PageLoadStrategy.EAGER);
 
             addStep(automationSteps, "Opening Chrome browser...");
             driver = new ChromeDriver(options);
-            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(180));
-            driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(60));
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(60));
+            driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(30));
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
 
             addStep(automationSteps, "Navigating to kalvium.community...");
-            driver.get("https://kalvium.community");
-            Thread.sleep(2000);
+            try {
+                driver.get("https://kalvium.community");
+            } catch (org.openqa.selenium.TimeoutException e) {
+                addStep(automationSteps, "Initial page load timed out, attempting to stop load...");
+                ((JavascriptExecutor) driver).executeScript("window.stop();");
+            }
+            Thread.sleep(3000);
 
             addStep(automationSteps, "Injecting authentication cookies...");
             injectCookies(driver, config);
@@ -199,37 +224,51 @@ public class WorklogService {
             if (driver != null) {
                 try {
                     driver.quit();
-                    addStep(automationSteps, "Browser closed");
+                    logger.info("Browser closed");
                 } catch (Exception e) {
                     logger.error("Error closing driver: " + e.getMessage());
-                    try {
-                        Runtime.getRuntime().exec("pkill -f chrome");
-                        logger.warn("Forcefully killed Chrome processes");
-                    } catch (Exception killError) {
-                        logger.error("Could not kill Chrome processes: " + killError.getMessage());
-                    }
                 }
             }
-
-            // Clean up Chrome temp files to free memory
-            try {
-                Runtime.getRuntime().exec(new String[]{"sh", "-c", "rm -rf /tmp/.org.chromium.Chromium.* /tmp/chrome* 2>/dev/null || true"});
-                logger.info("Cleaned up Chrome temporary files");
-            } catch (Exception cleanupError) {
-                logger.warn("Could not clean up temp files: " + cleanupError.getMessage());
-            }
-
-            // Force garbage collection to free memory
-            System.gc();
-
-            automationSteps.clear();
-            screenshots.clear();
 
             try {
                 Thread.sleep(2000);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             }
+
+            killAllChromeProcesses();
+
+            try {
+                Runtime.getRuntime().exec(new String[]{"sh", "-c", "rm -rf /tmp/.org.chromium.Chromium.* /tmp/chrome* /tmp/scoped_dir* 2>/dev/null || true"});
+                logger.info("Cleaned up Chrome temporary files");
+            } catch (Exception cleanupError) {
+                logger.warn("Could not clean up temp files: " + cleanupError.getMessage());
+            }
+
+            System.gc();
+
+            automationSteps.clear();
+            screenshots.clear();
+
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    @SuppressWarnings("UseSpecificCatch")
+    private void killAllChromeProcesses() {
+        try {
+            Process p1 = Runtime.getRuntime().exec(new String[]{"sh", "-c", "pkill -9 -f 'chrome|chromedriver' || true"});
+            p1.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            Thread.sleep(1000);
+            Process p2 = Runtime.getRuntime().exec(new String[]{"sh", "-c", "killall -9 chrome chromedriver 2>/dev/null || true"});
+            p2.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            logger.info("Killed all Chrome processes");
+        } catch (Exception e) {
+            logger.warn("Error killing Chrome processes: " + e.getMessage());
         }
     }
 
