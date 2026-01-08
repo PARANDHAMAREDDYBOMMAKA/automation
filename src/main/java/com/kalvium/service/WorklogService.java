@@ -116,7 +116,7 @@ public class WorklogService {
             driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
             driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(10));
 
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
             JavascriptExecutor js = (JavascriptExecutor) driver;
 
             // CRITICAL FIX: Navigate to the domain FIRST before injecting cookies
@@ -141,17 +141,41 @@ public class WorklogService {
 
             addStep(automationSteps, "Navigating to internships page...");
             driver.get("https://kalvium.community/internships");
-            Thread.sleep(5000);
+            Thread.sleep(8000);
 
             // Force stop loading
             try {
                 js.executeScript("window.stop();");
             } catch (Exception ignored) {}
 
-            Thread.sleep(1000);
+            Thread.sleep(2000);
+
+            // Wait for the page to have basic content loaded
+            addStep(automationSteps, "Waiting for table to load...");
+            try {
+                wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//table")));
+                Thread.sleep(2000);
+                addStep(automationSteps, "Table found on page");
+            } catch (Exception e) {
+                addStep(automationSteps, "Warning: Table not found, but continuing...");
+            }
+
             captureScreenshot(driver, screenshots, "Internships page loaded", config.getAuthSessionId());
 
             addStep(automationSteps, "Looking for pending worklog button using optimized xpath...");
+
+            // Check if table has any rows first
+            try {
+                List<WebElement> tableRows = driver.findElements(By.xpath("//table//tbody//tr"));
+                addStep(automationSteps, "Found " + tableRows.size() + " row(s) in table");
+
+                if (tableRows.isEmpty()) {
+                    addStep(automationSteps, "No rows found in table - possibly no pending worklogs");
+                    return "SUCCESS: No pending worklogs found to submit.";
+                }
+            } catch (Exception e) {
+                addStep(automationSteps, "Warning: Could not check table rows - " + e.getMessage());
+            }
 
             // Use the exact xpath provided by user with fallbacks
             WebElement completeButton = null;
@@ -164,13 +188,27 @@ public class WorklogService {
                 try {
                     // Fallback: more flexible xpath for the Complete button
                     completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                            By.xpath("//table//tbody//tr//td//button[contains(text(), 'Complete') or @aria-label='Complete']")));
+                            By.xpath("//table//tbody//tr//td//button[contains(text(), 'Complete') or contains(text(), 'complete') or @aria-label='Complete']")));
                     addStep(automationSteps, "Found button using flexible xpath");
                 } catch (Exception e2) {
-                    // Last resort: find any button in table
-                    completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                            By.xpath("//table//tbody//tr//td[3]//button")));
-                    addStep(automationSteps, "Found button using td[3] position");
+                    try {
+                        // Try any button in the third column
+                        completeButton = wait.until(ExpectedConditions.elementToBeClickable(
+                                By.xpath("//table//tbody//tr//td[3]//button")));
+                        addStep(automationSteps, "Found button using td[3] position");
+                    } catch (Exception e3) {
+                        try {
+                            // Try first button in table
+                            completeButton = wait.until(ExpectedConditions.elementToBeClickable(
+                                    By.xpath("//table//tbody//tr[1]//td//button")));
+                            addStep(automationSteps, "Found first button in table");
+                        } catch (Exception e4) {
+                            // Last resort: find any button in the table
+                            completeButton = wait.until(ExpectedConditions.elementToBeClickable(
+                                    By.xpath("//table//tbody//tr//td//button")));
+                            addStep(automationSteps, "Found button using any button in table");
+                        }
+                    }
                 }
             }
 
@@ -178,12 +216,21 @@ public class WorklogService {
             js.executeScript("arguments[0].scrollIntoView({block: 'center'});", completeButton);
             Thread.sleep(500);
             js.executeScript("arguments[0].click();", completeButton);
-            Thread.sleep(2000);
+            Thread.sleep(3000);
 
             addStep(automationSteps, "Waiting for worklog form to appear...");
-            wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.xpath("//*[contains(text(), 'My Worklog') or contains(text(), 'Worklog')]")));
-            Thread.sleep(1500);
+            try {
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                        By.xpath("//*[contains(text(), 'My Worklog') or contains(text(), 'Worklog') or contains(text(), 'worklog')]")));
+                Thread.sleep(2000);
+                addStep(automationSteps, "Worklog form heading found");
+            } catch (Exception e) {
+                addStep(automationSteps, "Warning: Worklog heading not found, checking for form elements...");
+                // Check if the form is present even without heading
+                wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//form")));
+                Thread.sleep(2000);
+                addStep(automationSteps, "Form detected");
+            }
             captureScreenshot(driver, screenshots, "Worklog form opened", config.getAuthSessionId());
 
             addStep(automationSteps, "Filling out the form with optimized xpaths...");
@@ -457,9 +504,35 @@ public class WorklogService {
 
         WebElement worklogField = null;
         try {
-            worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                By.xpath("//div[@contenteditable='true']")));
-            addStep(automationSteps, "Found contenteditable field");
+            // Wait a bit longer for the editor to fully load
+            Thread.sleep(2000);
+
+            // Try multiple strategies to find the editor
+            try {
+                // Strategy 1: Look for the ProseMirror editor (common rich text editor)
+                worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath("//div[contains(@class, 'ProseMirror') or contains(@class, 'tiptap')][@contenteditable='true']")));
+                addStep(automationSteps, "Found contenteditable field using ProseMirror class");
+            } catch (Exception e1) {
+                try {
+                    // Strategy 2: Generic contenteditable div
+                    worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                        By.xpath("//div[@contenteditable='true']")));
+                    addStep(automationSteps, "Found contenteditable field using generic xpath");
+                } catch (Exception e2) {
+                    try {
+                        // Strategy 3: Use the container provided by user and look for contenteditable inside
+                        worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                            By.xpath("//form//div[@contenteditable='true']")));
+                        addStep(automationSteps, "Found contenteditable field inside form");
+                    } catch (Exception e3) {
+                        // Strategy 4: Full XPath to the editor container
+                        worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div[2]/div/div[2]/div")));
+                        addStep(automationSteps, "Found editor using full xpath to container");
+                    }
+                }
+            }
         } catch (Exception e) {
             addStep(automationSteps, "ERROR: Could not find worklog field - " + e.getMessage());
             throw e;
