@@ -234,7 +234,7 @@ public class WorklogService {
             captureScreenshot(driver, screenshots, "Worklog form opened", config.getAuthSessionId());
 
             addStep(automationSteps, "Filling out the form with optimized xpaths...");
-            fillFormOptimized(driver, wait, js, config, automationSteps);
+            fillFormOptimized(wait, js, config, automationSteps);
             Thread.sleep(1000);
             captureScreenshot(driver, screenshots, "Form filled", config.getAuthSessionId());
 
@@ -420,79 +420,107 @@ public class WorklogService {
     }
 
     @SuppressWarnings("UseSpecificCatch")
-    private void fillFormOptimized(WebDriver driver, WebDriverWait wait, JavascriptExecutor js,
+    private void fillFormOptimized(WebDriverWait wait, JavascriptExecutor js,
                                    AuthConfig config, List<String> automationSteps) throws InterruptedException {
 
         addStep(automationSteps, "Looking for work status dropdown...");
 
-        // Try using the user-provided xpath first: //*[@id="workType"]
-        WebElement dropdown = null;
+        boolean dropdownSelected = false;
+
+        // Strategy 1: Use the full XPath to directly access the select element
         try {
-            dropdown = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[@id='workType']")));
-            addStep(automationSteps, "Found dropdown using provided xpath: //*[@id='workType']");
+            WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select")));
+            addStep(automationSteps, "Found select element using full XPath");
+
+            js.executeScript("arguments[0].scrollIntoView({block: 'center'});", selectElement);
+            Thread.sleep(500);
+
+            // Select the first option (option[1] which is "Working out of Kalvium environment (Classroom)")
+            js.executeScript(
+                "var select = arguments[0];" +
+                "select.selectedIndex = 1;" +  // Select option[1]
+                "select.dispatchEvent(new Event('change', { bubbles: true }));" +
+                "select.dispatchEvent(new Event('input', { bubbles: true }));",
+                selectElement);
+
+            addStep(automationSteps, "Selected option[1] from dropdown using full XPath");
+            dropdownSelected = true;
+            Thread.sleep(2000); // Wait for form to react and editor to appear
         } catch (Exception e1) {
+            addStep(automationSteps, "Full XPath select not found, trying alternative: " + e1.getMessage());
+
+            // Strategy 2: Try with the button full XPath and then find select
             try {
-                // Fallback to select element
-                dropdown = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//select")));
-                addStep(automationSteps, "Found dropdown using generic select xpath");
-            } catch (Exception e2) {
-                addStep(automationSteps, "Warning: Dropdown not found, trying custom dropdown...");
-            }
-        }
+                WebElement dropdownButton = wait.until(ExpectedConditions.elementToBeClickable(
+                        By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/button")));
+                addStep(automationSteps, "Found dropdown button using full XPath");
 
-        if (dropdown != null) {
-            try {
-                js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdown);
-                Thread.sleep(300);
+                js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdownButton);
+                Thread.sleep(500);
 
-                // Try to select using the user-provided option xpath
-                boolean selected = (boolean) js.executeScript(
-                    "var select = arguments[0];" +
-                    "if (select.tagName === 'SELECT') {" +
-                    "  for(var i = 0; i < select.options.length; i++) {" +
-                    "    if(select.options[i].text.includes('Working out of the Kalvium environment') || " +
-                    "       select.options[i].text.includes('Classroom')) {" +
-                    "      select.selectedIndex = i;" +
-                    "      select.dispatchEvent(new Event('change', { bubbles: true }));" +
-                    "      return true;" +
-                    "    }" +
-                    "  }" +
-                    "}" +
-                    "return false;", dropdown);
+                // Click the button to reveal/activate the select
+                js.executeScript("arguments[0].click();", dropdownButton);
+                addStep(automationSteps, "Clicked dropdown button");
+                Thread.sleep(1000);
 
-                if (selected) {
-                    addStep(automationSteps, "Selected 'Working out of Kalvium environment' from dropdown");
-                } else {
-                    addStep(automationSteps, "Could not auto-select, dropdown may require manual interaction");
+                // Now try to find and interact with the select or option
+                try {
+                    WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
+                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select")));
+                    js.executeScript(
+                        "var select = arguments[0];" +
+                        "select.selectedIndex = 1;" +
+                        "select.dispatchEvent(new Event('change', { bubbles: true }));" +
+                        "select.dispatchEvent(new Event('input', { bubbles: true }));",
+                        selectElement);
+                    addStep(automationSteps, "Selected option after clicking button");
+                    dropdownSelected = true;
+                    Thread.sleep(2000);
+                } catch (Exception e) {
+                    // Try clicking the option directly
+                    WebElement option = wait.until(ExpectedConditions.elementToBeClickable(
+                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select/option[1]")));
+                    js.executeScript("arguments[0].selected = true; arguments[0].parentElement.dispatchEvent(new Event('change', { bubbles: true }));", option);
+                    addStep(automationSteps, "Clicked option[1] directly");
+                    dropdownSelected = true;
+                    Thread.sleep(2000);
                 }
-                Thread.sleep(500);
-            } catch (Exception e) {
-                addStep(automationSteps, "Error selecting dropdown: " + e.getMessage());
+            } catch (Exception e2) {
+                addStep(automationSteps, "Full XPath button approach failed: " + e2.getMessage());
+
+                // Strategy 3: Fallback to ID-based approach
+                try {
+                    WebElement dropdown = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[@id='workType']")));
+                    addStep(automationSteps, "Found dropdown using ID='workType'");
+
+                    js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdown);
+                    Thread.sleep(500);
+
+                    js.executeScript(
+                        "var select = arguments[0];" +
+                        "if (select.tagName === 'SELECT') {" +
+                        "  select.selectedIndex = 1;" +
+                        "  select.dispatchEvent(new Event('change', { bubbles: true }));" +
+                        "  select.dispatchEvent(new Event('input', { bubbles: true }));" +
+                        "} else if (select.tagName === 'BUTTON') {" +
+                        "  select.click();" +
+                        "}",
+                        dropdown);
+
+                    addStep(automationSteps, "Selected using ID-based approach");
+                    dropdownSelected = true;
+                    Thread.sleep(2000);
+                } catch (Exception e3) {
+                    addStep(automationSteps, "ERROR: All dropdown strategies failed - " + e3.getMessage());
+                }
             }
         }
 
-        // If native select didn't work, try custom dropdown
-        if (dropdown == null) {
-            try {
-                // Click on dropdown trigger using user-provided xpath: //*[@id="radix-:r1q:"]/div[2]/form/div[1]/div/button
-                WebElement dropdownTrigger = wait.until(ExpectedConditions.elementToBeClickable(
-                        By.xpath("//button[contains(@id, 'workType') or contains(text(), 'Select')]")));
-                js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdownTrigger);
-                Thread.sleep(300);
-                js.executeScript("arguments[0].click();", dropdownTrigger);
-                Thread.sleep(800);
-
-                // Select the option using user-provided xpath or flexible alternative
-                WebElement option = wait.until(ExpectedConditions.elementToBeClickable(
-                        By.xpath("//*[contains(text(), 'Working out of the Kalvium environment') and contains(text(), 'Classroom')]")));
-                js.executeScript("arguments[0].scrollIntoView({block: 'center'});", option);
-                Thread.sleep(300);
-                js.executeScript("arguments[0].click();", option);
-                Thread.sleep(500);
-                addStep(automationSteps, "Selected custom dropdown option");
-            } catch (Exception e) {
-                addStep(automationSteps, "Warning: Could not interact with custom dropdown - " + e.getMessage());
-            }
+        if (!dropdownSelected) {
+            addStep(automationSteps, "WARNING: Dropdown selection failed - editor may not appear!");
+        } else {
+            addStep(automationSteps, "Dropdown successfully selected, waiting for editor to load...");
         }
 
         // Get form content from config
@@ -504,37 +532,45 @@ public class WorklogService {
 
         WebElement worklogField = null;
         try {
-            // Wait a bit longer for the editor to fully load
+            // Wait longer for the editor to appear after dropdown selection
             Thread.sleep(2000);
 
             // Try multiple strategies to find the editor
             try {
-                // Strategy 1: Look for the ProseMirror editor (common rich text editor)
+                // Strategy 1: Try the user-provided XPath first (may have dynamic radix ID)
+                // Looking for patterns like: //*[@id="radix-:rs:"]/div[2]/form/div[1]/div[2]/div/div[2]/div
                 worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.xpath("//div[contains(@class, 'ProseMirror') or contains(@class, 'tiptap')][@contenteditable='true']")));
-                addStep(automationSteps, "Found contenteditable field using ProseMirror class");
+                    By.xpath("//*[starts-with(@id, 'radix-')]/div[2]/form/div[1]/div[2]/div/div[2]/div")));
+                addStep(automationSteps, "Found editor using radix-based XPath pattern");
             } catch (Exception e1) {
                 try {
-                    // Strategy 2: Generic contenteditable div
+                    // Strategy 2: Generic contenteditable div (most common)
                     worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
                         By.xpath("//div[@contenteditable='true']")));
                     addStep(automationSteps, "Found contenteditable field using generic xpath");
                 } catch (Exception e2) {
                     try {
-                        // Strategy 3: Use the container provided by user and look for contenteditable inside
+                        // Strategy 3: Look for the ProseMirror/tiptap editor (rich text editor frameworks)
                         worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                            By.xpath("//form//div[@contenteditable='true']")));
-                        addStep(automationSteps, "Found contenteditable field inside form");
+                            By.xpath("//div[contains(@class, 'ProseMirror') or contains(@class, 'tiptap')]")));
+                        addStep(automationSteps, "Found contenteditable field using ProseMirror/tiptap class");
                     } catch (Exception e3) {
-                        // Strategy 4: Full XPath to the editor container
-                        worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div[2]/div/div[2]/div")));
-                        addStep(automationSteps, "Found editor using full xpath to container");
+                        try {
+                            // Strategy 4: Look for contenteditable inside form
+                            worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                                By.xpath("//form//div[@contenteditable='true']")));
+                            addStep(automationSteps, "Found contenteditable field inside form");
+                        } catch (Exception e4) {
+                            // Strategy 5: Look for the editor container by looking after the dropdown
+                            worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                                By.xpath("//*[@id='workType']/ancestor::form//div[@contenteditable='true']")));
+                            addStep(automationSteps, "Found editor by searching after dropdown in form");
+                        }
                     }
                 }
             }
         } catch (Exception e) {
-            addStep(automationSteps, "ERROR: Could not find worklog field - " + e.getMessage());
+            addStep(automationSteps, "ERROR: Could not find worklog field after " + (dropdownSelected ? "dropdown was selected" : "dropdown selection failed") + " - " + e.getMessage());
             throw e;
         }
 
