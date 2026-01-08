@@ -68,7 +68,7 @@ public class WorklogService {
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-blink-features=AutomationControlled",
-                    "--window-size=1920,1080",
+                    "--window-size=1280,720",
                     "--disable-gpu",
                     "--disable-extensions",
                     "--disable-background-networking",
@@ -82,13 +82,34 @@ public class WorklogService {
                     "--log-level=3",
                     "--silent",
                     "--remote-debugging-port=9222",
-                    "--disable-features=VizDisplayCompositor",
+                    "--disable-features=VizDisplayCompositor,NetworkService",
                     "--disable-web-security",
                     "--enable-unsafe-swiftshader",
-                    "--remote-allow-origins=*"
+                    "--remote-allow-origins=*",
+                    "--disable-images",
+                    "--blink-settings=imagesEnabled=false",
+                    "--disable-plugins",
+                    "--disable-accelerated-2d-canvas",
+                    "--disable-accelerated-jpeg-decoding",
+                    "--disable-accelerated-mjpeg-decode",
+                    "--disable-accelerated-video-decode",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-ipc-flooding-protection",
+                    "--disable-client-side-phishing-detection",
+                    "--disable-hang-monitor",
+                    "--disable-prompt-on-repost",
+                    "--disable-domain-reliability",
+                    "--disable-component-update"
             );
-            options.setPageLoadStrategy(PageLoadStrategy.NORMAL);
+            options.setPageLoadStrategy(PageLoadStrategy.NONE);
             options.setAcceptInsecureCerts(true);
+
+            // Critical memory settings
+            options.addArguments("--memory-pressure-off");
+            options.addArguments("--max-old-space-size=128");
+            options.addArguments("--js-flags=--max-old-space-size=128");
 
             addStep(automationSteps, "Opening Chrome browser...");
             driver = new ChromeDriver(options);
@@ -102,9 +123,15 @@ public class WorklogService {
             addStep(automationSteps, "Navigating to kalvium.community (required for cookies)...");
             driver.get("https://kalvium.community");
 
-            // Wait for page to be ready
-            wait.until(webDriver -> js.executeScript("return document.readyState").equals("complete"));
-            Thread.sleep(1000);
+            // With PageLoadStrategy.NONE, wait manually
+            Thread.sleep(3000);
+
+            // Force stop any pending loads
+            try {
+                js.executeScript("window.stop();");
+            } catch (Exception ignored) {}
+
+            Thread.sleep(500);
 
             addStep(automationSteps, "Page loaded, current domain: " + driver.getCurrentUrl());
 
@@ -114,8 +141,14 @@ public class WorklogService {
 
             addStep(automationSteps, "Navigating to internships page...");
             driver.get("https://kalvium.community/internships");
-            wait.until(webDriver -> js.executeScript("return document.readyState").equals("complete"));
-            Thread.sleep(2000);
+            Thread.sleep(5000);
+
+            // Force stop loading
+            try {
+                js.executeScript("window.stop();");
+            } catch (Exception ignored) {}
+
+            Thread.sleep(1000);
             captureScreenshot(driver, screenshots, "Internships page loaded", config.getAuthSessionId());
 
             addStep(automationSteps, "Looking for pending worklog button using optimized xpath...");
