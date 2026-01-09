@@ -106,7 +106,6 @@ public class WorklogService {
             options.setPageLoadStrategy(PageLoadStrategy.NONE);
             options.setAcceptInsecureCerts(true);
 
-            // Critical memory settings
             options.addArguments("--memory-pressure-off");
             options.addArguments("--max-old-space-size=128");
             options.addArguments("--js-flags=--max-old-space-size=128");
@@ -119,14 +118,11 @@ public class WorklogService {
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
             JavascriptExecutor js = (JavascriptExecutor) driver;
 
-            // CRITICAL FIX: Navigate to the domain FIRST before injecting cookies
             addStep(automationSteps, "Navigating to kalvium.community (required for cookies)...");
             driver.get("https://kalvium.community");
 
-            // With PageLoadStrategy.NONE, wait manually
             Thread.sleep(3000);
 
-            // Force stop any pending loads
             try {
                 js.executeScript("window.stop();");
             } catch (Exception ignored) {}
@@ -143,14 +139,12 @@ public class WorklogService {
             driver.get("https://kalvium.community/internships");
             Thread.sleep(8000);
 
-            // Force stop loading
             try {
                 js.executeScript("window.stop();");
             } catch (Exception ignored) {}
 
             Thread.sleep(2000);
 
-            // Wait for the page to have basic content loaded
             addStep(automationSteps, "Waiting for table to load...");
             try {
                 wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//table")));
@@ -164,7 +158,6 @@ public class WorklogService {
 
             addStep(automationSteps, "Looking for pending worklog button using optimized xpath...");
 
-            // Check if table has any rows first
             try {
                 List<WebElement> tableRows = driver.findElements(By.xpath("//table//tbody//tr"));
                 addStep(automationSteps, "Found " + tableRows.size() + " row(s) in table");
@@ -177,33 +170,27 @@ public class WorklogService {
                 addStep(automationSteps, "Warning: Could not check table rows - " + e.getMessage());
             }
 
-            // Use the exact xpath provided by user with fallbacks
             WebElement completeButton = null;
             try {
-                // Primary xpath from user
                 completeButton = wait.until(ExpectedConditions.elementToBeClickable(
                         By.xpath("//*[@id='radix-:r1p:']/div/div[2]/table/tbody/tr/td[3]/button")));
                 addStep(automationSteps, "Found button using primary xpath");
             } catch (Exception e1) {
                 try {
-                    // Fallback: more flexible xpath for the Complete button
                     completeButton = wait.until(ExpectedConditions.elementToBeClickable(
                             By.xpath("//table//tbody//tr//td//button[contains(text(), 'Complete') or contains(text(), 'complete') or @aria-label='Complete']")));
                     addStep(automationSteps, "Found button using flexible xpath");
                 } catch (Exception e2) {
                     try {
-                        // Try any button in the third column
                         completeButton = wait.until(ExpectedConditions.elementToBeClickable(
                                 By.xpath("//table//tbody//tr//td[3]//button")));
                         addStep(automationSteps, "Found button using td[3] position");
                     } catch (Exception e3) {
                         try {
-                            // Try first button in table
                             completeButton = wait.until(ExpectedConditions.elementToBeClickable(
                                     By.xpath("//table//tbody//tr[1]//td//button")));
                             addStep(automationSteps, "Found first button in table");
                         } catch (Exception e4) {
-                            // Last resort: find any button in the table
                             completeButton = wait.until(ExpectedConditions.elementToBeClickable(
                                     By.xpath("//table//tbody//tr//td//button")));
                             addStep(automationSteps, "Found button using any button in table");
@@ -226,7 +213,6 @@ public class WorklogService {
                 addStep(automationSteps, "Worklog form heading found");
             } catch (Exception e) {
                 addStep(automationSteps, "Warning: Worklog heading not found, checking for form elements...");
-                // Check if the form is present even without heading
                 wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//form")));
                 Thread.sleep(2000);
                 addStep(automationSteps, "Form detected");
@@ -374,35 +360,28 @@ public class WorklogService {
     }
 
     private void injectCookies(WebDriver driver, AuthConfig config) {
-        // Clear all existing cookies
         driver.manage().deleteAllCookies();
 
-        // Extract just the cookie value without any domain suffix
-        // Example: "771ac62d-b6ec-4b1f-9d5f-31d4fdf63aa2.localhost-58590" -> "771ac62d-b6ec-4b1f-9d5f-31d4fdf63aa2"
         String authSessionId = config.getAuthSessionId();
         String keycloakIdentity = config.getKeycloakIdentity();
         String keycloakSession = config.getKeycloakSession();
 
-        // Clean AUTH_SESSION_ID - take everything before the first "."
         if (authSessionId != null && authSessionId.contains(".")) {
             String[] parts = authSessionId.split("\\.", 2);
             authSessionId = parts[0];
             logger.info("Sanitized AUTH_SESSION_ID from {} to {}", config.getAuthSessionId(), authSessionId);
         }
 
-        // Clean KEYCLOAK_IDENTITY if needed
         if (keycloakIdentity != null && keycloakIdentity.contains(".") && keycloakIdentity.split("\\.").length > 5) {
             String[] parts = keycloakIdentity.split("\\.", 2);
             keycloakIdentity = parts[0];
         }
 
-        // Clean KEYCLOAK_SESSION if needed
         if (keycloakSession != null && keycloakSession.contains(".") && keycloakSession.split("\\.").length > 5) {
             String[] parts = keycloakSession.split("\\.", 2);
             keycloakSession = parts[0];
         }
 
-        // Add cookies - domain must match current page domain
         driver.manage().addCookie(new Cookie.Builder("AUTH_SESSION_ID", authSessionId)
                 .domain(".kalvium.community").path("/").isSecure(true).build());
         driver.manage().addCookie(new Cookie.Builder("AUTH_SESSION_ID_LEGACY", authSessionId)
@@ -427,7 +406,6 @@ public class WorklogService {
 
         boolean dropdownSelected = false;
 
-        // Strategy 1: Use the full XPath to directly access the select element
         try {
             WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
                     By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select")));
@@ -436,21 +414,19 @@ public class WorklogService {
             js.executeScript("arguments[0].scrollIntoView({block: 'center'});", selectElement);
             Thread.sleep(500);
 
-            // Select the first option (option[1] which is "Working out of Kalvium environment (Classroom)")
             js.executeScript(
                 "var select = arguments[0];" +
-                "select.selectedIndex = 1;" +  // Select option[1]
+                "select.selectedIndex = 0;" +
                 "select.dispatchEvent(new Event('change', { bubbles: true }));" +
                 "select.dispatchEvent(new Event('input', { bubbles: true }));",
                 selectElement);
 
-            addStep(automationSteps, "Selected option[1] from dropdown using full XPath");
+            addStep(automationSteps, "Selected option[0] (Working Day - Kalvium Environment) from dropdown using full XPath");
             dropdownSelected = true;
-            Thread.sleep(2000); // Wait for form to react and editor to appear
+            Thread.sleep(2000);
         } catch (Exception e1) {
             addStep(automationSteps, "Full XPath select not found, trying alternative: " + e1.getMessage());
 
-            // Strategy 2: Try with the button full XPath and then find select
             try {
                 WebElement dropdownButton = wait.until(ExpectedConditions.elementToBeClickable(
                         By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/button")));
@@ -459,18 +435,16 @@ public class WorklogService {
                 js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdownButton);
                 Thread.sleep(500);
 
-                // Click the button to reveal/activate the select
                 js.executeScript("arguments[0].click();", dropdownButton);
                 addStep(automationSteps, "Clicked dropdown button");
                 Thread.sleep(1000);
 
-                // Now try to find and interact with the select or option
                 try {
                     WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
                             By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select")));
                     js.executeScript(
                         "var select = arguments[0];" +
-                        "select.selectedIndex = 1;" +
+                        "select.selectedIndex = 0;" +
                         "select.dispatchEvent(new Event('change', { bubbles: true }));" +
                         "select.dispatchEvent(new Event('input', { bubbles: true }));",
                         selectElement);
@@ -478,18 +452,16 @@ public class WorklogService {
                     dropdownSelected = true;
                     Thread.sleep(2000);
                 } catch (Exception e) {
-                    // Try clicking the option directly
                     WebElement option = wait.until(ExpectedConditions.elementToBeClickable(
-                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select/option[1]")));
+                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select/option[0]")));
                     js.executeScript("arguments[0].selected = true; arguments[0].parentElement.dispatchEvent(new Event('change', { bubbles: true }));", option);
-                    addStep(automationSteps, "Clicked option[1] directly");
+                    addStep(automationSteps, "Clicked option[0] (Working Day - Kalvium Environment) directly");
                     dropdownSelected = true;
                     Thread.sleep(2000);
                 }
             } catch (Exception e2) {
                 addStep(automationSteps, "Full XPath button approach failed: " + e2.getMessage());
 
-                // Strategy 3: Fallback to ID-based approach
                 try {
                     WebElement dropdown = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[@id='workType']")));
                     addStep(automationSteps, "Found dropdown using ID='workType'");
@@ -500,7 +472,7 @@ public class WorklogService {
                     js.executeScript(
                         "var select = arguments[0];" +
                         "if (select.tagName === 'SELECT') {" +
-                        "  select.selectedIndex = 1;" +
+                        "  select.selectedIndex = 0;" +
                         "  select.dispatchEvent(new Event('change', { bubbles: true }));" +
                         "  select.dispatchEvent(new Event('input', { bubbles: true }));" +
                         "} else if (select.tagName === 'BUTTON') {" +
@@ -523,7 +495,6 @@ public class WorklogService {
             addStep(automationSteps, "Dropdown successfully selected, waiting for editor to load...");
         }
 
-        // Get form content from config
         String tasksContent = config.getTasksCompleted() != null ? config.getTasksCompleted() : "Completed assigned tasks";
         String challengesContent = config.getChallenges() != null ? config.getChallenges() : "NA";
         String blockersContent = config.getBlockers() != null ? config.getBlockers() : "NA";
@@ -532,36 +503,28 @@ public class WorklogService {
 
         WebElement worklogField = null;
         try {
-            // Wait longer for the editor to appear after dropdown selection
             Thread.sleep(2000);
 
-            // Try multiple strategies to find the editor
             try {
-                // Strategy 1: Try the user-provided XPath first (may have dynamic radix ID)
-                // Looking for patterns like: //*[@id="radix-:rs:"]/div[2]/form/div[1]/div[2]/div/div[2]/div
                 worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
                     By.xpath("//*[starts-with(@id, 'radix-')]/div[2]/form/div[1]/div[2]/div/div[2]/div")));
                 addStep(automationSteps, "Found editor using radix-based XPath pattern");
             } catch (Exception e1) {
                 try {
-                    // Strategy 2: Generic contenteditable div (most common)
                     worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
                         By.xpath("//div[@contenteditable='true']")));
                     addStep(automationSteps, "Found contenteditable field using generic xpath");
                 } catch (Exception e2) {
                     try {
-                        // Strategy 3: Look for the ProseMirror/tiptap editor (rich text editor frameworks)
                         worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
                             By.xpath("//div[contains(@class, 'ProseMirror') or contains(@class, 'tiptap')]")));
                         addStep(automationSteps, "Found contenteditable field using ProseMirror/tiptap class");
                     } catch (Exception e3) {
                         try {
-                            // Strategy 4: Look for contenteditable inside form
                             worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
                                 By.xpath("//form//div[@contenteditable='true']")));
                             addStep(automationSteps, "Found contenteditable field inside form");
                         } catch (Exception e4) {
-                            // Strategy 5: Look for the editor container by looking after the dropdown
                             worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
                                 By.xpath("//*[@id='workType']/ancestor::form//div[@contenteditable='true']")));
                             addStep(automationSteps, "Found editor by searching after dropdown in form");
@@ -577,7 +540,6 @@ public class WorklogService {
         addStep(automationSteps, "Updating worklog content...");
         String originalHtml = (String) js.executeScript("return arguments[0].innerHTML;", worklogField);
 
-        // Update the three list sections
         String updatedHtml = updateAllListSections(originalHtml, tasksContent, challengesContent, blockersContent);
 
         js.executeScript(
@@ -599,7 +561,6 @@ public class WorklogService {
     }
 
     private String updateAllListSections(String html, String tasksContent, String challengesContent, String blockersContent) {
-        // Remove template phrases
         String[] templatesToRemove = {
             "Add more tasks",
             "Add any obstacles encountered and how you resolved them",
@@ -611,7 +572,6 @@ public class WorklogService {
             updatedHtml = removeListItemContaining(updatedHtml, template);
         }
 
-        // Update each list section
         updatedHtml = updateNthListFirstItem(updatedHtml, 1, tasksContent);
         updatedHtml = updateNthListFirstItem(updatedHtml, 2, challengesContent);
         updatedHtml = updateNthListFirstItem(updatedHtml, 3, blockersContent);

@@ -1,17 +1,21 @@
 package com.kalvium.controller;
 
-import com.kalvium.model.AuthConfig;
-import com.kalvium.service.SupabaseConfigStorageService;
-import com.kalvium.service.WorklogService;
+import java.util.HashMap;
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseBody;
 
-import java.util.HashMap;
-import java.util.Map;
+import com.kalvium.model.AuthConfig;
+import com.kalvium.service.SupabaseConfigStorageService;
+import com.kalvium.service.WorklogService;
 
 @Controller
 public class WorklogController {
@@ -85,7 +89,6 @@ public class WorklogController {
                 AuthConfig config = configs.get(i);
                 Map<String, String> userInfo = new HashMap<>();
                 userInfo.put("id", String.valueOf(i + 1));
-                // Show only last 8 characters of auth_session_id for privacy
                 String authId = config.getAuthSessionId();
                 userInfo.put("authSessionId", authId.length() > 8 ? "..." + authId.substring(authId.length() - 8) : authId);
                 userInfo.put("tasksCompleted", config.getTasksCompleted());

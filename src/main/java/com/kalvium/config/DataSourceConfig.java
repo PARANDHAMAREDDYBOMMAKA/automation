@@ -23,16 +23,14 @@ public class DataSourceConfig {
         }
 
         try {
-            // Parse the DATABASE_URL (format: postgresql://user:password@host:port/database)
             URI dbUri = new URI(databaseUrl.replace("postgres://", "postgresql://"));
 
             String username = dbUri.getUserInfo().split(":")[0];
             String password = dbUri.getUserInfo().split(":")[1];
             String host = dbUri.getHost();
             int port = dbUri.getPort();
-            String database = dbUri.getPath().substring(1); // Remove leading /
+            String database = dbUri.getPath().substring(1);
 
-            // Build proper JDBC URL
             String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", host, port, database);
 
             return DataSourceBuilder
