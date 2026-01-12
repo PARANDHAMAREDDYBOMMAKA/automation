@@ -147,7 +147,8 @@ public class WorklogService {
 
             addStep(automationSteps, "Waiting for table to load...");
             try {
-                wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//table")));
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath("//*[starts-with(@id, 'radix-')]/div/div[2]/table")));
                 Thread.sleep(2000);
                 addStep(automationSteps, "Table found on page");
             } catch (Exception e) {
@@ -156,10 +157,11 @@ public class WorklogService {
 
             captureScreenshot(driver, screenshots, "Internships page loaded", config.getAuthSessionId());
 
-            addStep(automationSteps, "Looking for pending worklog button using optimized xpath...");
+            addStep(automationSteps, "Looking for pending worklog button using provided xpath...");
 
             try {
-                List<WebElement> tableRows = driver.findElements(By.xpath("//table//tbody//tr"));
+                List<WebElement> tableRows = driver.findElements(
+                    By.xpath("//*[starts-with(@id, 'radix-')]/div/div[2]/table/tbody/tr"));
                 addStep(automationSteps, "Found " + tableRows.size() + " row(s) in table");
 
                 if (tableRows.isEmpty()) {
@@ -173,7 +175,7 @@ public class WorklogService {
             WebElement completeButton = null;
             try {
                 completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                        By.xpath("//*[@id='radix-:r1p:']/div/div[2]/table/tbody/tr/td[3]/button")));
+                        By.xpath("//*[starts-with(@id, 'radix-')]/div/div[2]/table/tbody/tr/td[3]/button")));
                 addStep(automationSteps, "Found button using primary xpath");
             } catch (Exception e1) {
                 try {
