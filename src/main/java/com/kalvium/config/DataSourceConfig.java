@@ -6,9 +6,11 @@ import java.net.URISyntaxException;
 import javax.sql.DataSource;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 
 @Configuration
 public class DataSourceConfig {
@@ -33,13 +35,29 @@ public class DataSourceConfig {
 
             String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", host, port, database);
 
-            return DataSourceBuilder
-                .create()
-                .url(jdbcUrl)
-                .username(username)
-                .password(password)
-                .driverClassName("org.postgresql.Driver")
-                .build();
+            // Use HikariCP for optimized connection pooling
+            HikariConfig config = new HikariConfig();
+            config.setJdbcUrl(jdbcUrl);
+            config.setUsername(username);
+            config.setPassword(password);
+            config.setDriverClassName("org.postgresql.Driver");
+
+            // Optimize for low-resource environment
+            config.setMaximumPoolSize(5);
+            config.setMinimumIdle(2);
+            config.setConnectionTimeout(10000);
+            config.setIdleTimeout(300000);
+            config.setMaxLifetime(600000);
+            config.setLeakDetectionThreshold(60000);
+
+            // Performance optimizations
+            config.addDataSourceProperty("cachePrepStmts", "true");
+            config.addDataSourceProperty("prepStmtCacheSize", "250");
+            config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            config.addDataSourceProperty("useServerPrepStmts", "true");
+            config.addDataSourceProperty("reWriteBatchedInserts", "true");
+
+            return new HikariDataSource(config);
 
         } catch (URISyntaxException e) {
             throw new IllegalStateException("Invalid DATABASE_URL format", e);

@@ -52,13 +52,20 @@ EXPOSE 8080
 ENV JAVA_OPTS="-Xms256m -Xmx512m \
     -XX:MetaspaceSize=96m -XX:MaxMetaspaceSize=192m \
     -XX:+UseG1GC -XX:MaxGCPauseMillis=200 \
+    -XX:G1HeapRegionSize=1m \
+    -XX:InitiatingHeapOccupancyPercent=70 \
     -XX:+UseStringDeduplication \
     -XX:+OptimizeStringConcat \
     -XX:+UseCompressedOops \
     -XX:+UseCompressedClassPointers \
+    -XX:+ParallelRefProcEnabled \
+    -XX:+DisableExplicitGC \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/app/data/heap_dump.hprof \
     -XX:+ExitOnOutOfMemoryError \
-    -Djava.security.egd=file:/dev/./urandom"
+    -XX:ConcGCThreads=1 \
+    -XX:ParallelGCThreads=2 \
+    -Djava.security.egd=file:/dev/./urandom \
+    -Djava.awt.headless=true"
 
 ENTRYPOINT ["/app/startup.sh"]

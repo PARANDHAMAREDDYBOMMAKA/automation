@@ -103,7 +103,7 @@ public class WorklogService {
                     "--disable-domain-reliability",
                     "--disable-component-update"
             );
-            options.setPageLoadStrategy(PageLoadStrategy.NONE);
+            options.setPageLoadStrategy(PageLoadStrategy.EAGER);
             options.setAcceptInsecureCerts(true);
 
             options.addArguments("--memory-pressure-off");
@@ -112,8 +112,8 @@ public class WorklogService {
 
             addStep(automationSteps, "Opening Chrome browser...");
             driver = new ChromeDriver(options);
-            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
-            driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(10));
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(60));
+            driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(30));
 
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
             JavascriptExecutor js = (JavascriptExecutor) driver;
@@ -121,13 +121,13 @@ public class WorklogService {
             addStep(automationSteps, "Navigating to kalvium.community (required for cookies)...");
             driver.get("https://kalvium.community");
 
-            Thread.sleep(3000);
+            // Wait for page to be interactive
+            wait.until(webDriver -> {
+                String readyState = js.executeScript("return document.readyState").toString();
+                return "interactive".equals(readyState) || "complete".equals(readyState);
+            });
 
-            try {
-                js.executeScript("window.stop();");
-            } catch (Exception ignored) {}
-
-            Thread.sleep(500);
+            Thread.sleep(1000);
 
             addStep(automationSteps, "Page loaded, current domain: " + driver.getCurrentUrl());
 
@@ -137,11 +137,12 @@ public class WorklogService {
 
             addStep(automationSteps, "Navigating to internships page...");
             driver.get("https://kalvium.community/internships");
-            Thread.sleep(8000);
 
-            try {
-                js.executeScript("window.stop();");
-            } catch (Exception ignored) {}
+            // Wait for page to be interactive
+            wait.until(webDriver -> {
+                String readyState = js.executeScript("return document.readyState").toString();
+                return "interactive".equals(readyState) || "complete".equals(readyState);
+            });
 
             Thread.sleep(2000);
 
@@ -362,6 +363,21 @@ public class WorklogService {
     }
 
     private void injectCookies(WebDriver driver, AuthConfig config) {
+        JavascriptExecutor js = (JavascriptExecutor) driver;
+
+        // Wait for page to be in a state where it can accept cookies
+        try {
+            WebDriverWait cookieWait = new WebDriverWait(driver, Duration.ofSeconds(10));
+            cookieWait.until(webDriver -> {
+                String readyState = js.executeScript("return document.readyState").toString();
+                return "interactive".equals(readyState) || "complete".equals(readyState);
+            });
+            logger.info("Page ready for cookie injection (readyState: {})",
+                js.executeScript("return document.readyState"));
+        } catch (Exception e) {
+            logger.warn("Could not verify page readyState, proceeding anyway: {}", e.getMessage());
+        }
+
         driver.manage().deleteAllCookies();
 
         String authSessionId = config.getAuthSessionId();
@@ -384,20 +400,46 @@ public class WorklogService {
             keycloakSession = parts[0];
         }
 
-        driver.manage().addCookie(new Cookie.Builder("AUTH_SESSION_ID", authSessionId)
-                .domain(".kalvium.community").path("/").isSecure(true).build());
-        driver.manage().addCookie(new Cookie.Builder("AUTH_SESSION_ID_LEGACY", authSessionId)
-                .domain(".kalvium.community").path("/").isSecure(true).build());
-        driver.manage().addCookie(new Cookie.Builder("KEYCLOAK_IDENTITY", keycloakIdentity)
-                .domain(".kalvium.community").path("/").isSecure(true).build());
-        driver.manage().addCookie(new Cookie.Builder("KEYCLOAK_IDENTITY_LEGACY", keycloakIdentity)
-                .domain(".kalvium.community").path("/").isSecure(true).build());
-        driver.manage().addCookie(new Cookie.Builder("KEYCLOAK_SESSION", keycloakSession)
-                .domain(".kalvium.community").path("/").isSecure(true).build());
-        driver.manage().addCookie(new Cookie.Builder("KEYCLOAK_SESSION_LEGACY", keycloakSession)
-                .domain(".kalvium.community").path("/").isSecure(true).build());
+        // Add cookies with retry logic
+        addCookieWithRetry(driver, "AUTH_SESSION_ID", authSessionId);
+        addCookieWithRetry(driver, "AUTH_SESSION_ID_LEGACY", authSessionId);
+        addCookieWithRetry(driver, "KEYCLOAK_IDENTITY", keycloakIdentity);
+        addCookieWithRetry(driver, "KEYCLOAK_IDENTITY_LEGACY", keycloakIdentity);
+        addCookieWithRetry(driver, "KEYCLOAK_SESSION", keycloakSession);
+        addCookieWithRetry(driver, "KEYCLOAK_SESSION_LEGACY", keycloakSession);
 
-        logger.info("Cookies injected successfully for user");
+        // Verify cookies were set
+        int cookiesSet = driver.manage().getCookies().size();
+        logger.info("Cookies injected successfully for user ({} cookies total)", cookiesSet);
+    }
+
+    private void addCookieWithRetry(WebDriver driver, String name, String value) {
+        int maxRetries = 3;
+        int retryCount = 0;
+
+        while (retryCount < maxRetries) {
+            try {
+                driver.manage().addCookie(new Cookie.Builder(name, value)
+                    .domain(".kalvium.community").path("/").isSecure(true).build());
+                logger.debug("Cookie {} added successfully", name);
+                return;
+            } catch (Exception e) {
+                retryCount++;
+                logger.warn("Failed to add cookie {} (attempt {}/{}): {}",
+                    name, retryCount, maxRetries, e.getMessage());
+
+                if (retryCount < maxRetries) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted while adding cookie " + name, ie);
+                    }
+                } else {
+                    throw new RuntimeException("Failed to add cookie " + name + " after " + maxRetries + " attempts", e);
+                }
+            }
+        }
     }
 
     @SuppressWarnings("UseSpecificCatch")
