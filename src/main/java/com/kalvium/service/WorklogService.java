@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.kalvium.model.AuthConfig;
+import com.kalvium.util.XPathLoader;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 
@@ -30,6 +31,9 @@ import io.github.bonigarcia.wdm.WebDriverManager;
 public class WorklogService {
 
     private static final Logger logger = LoggerFactory.getLogger(WorklogService.class);
+    private static final int MAX_NAVIGATION_RETRIES = 3;
+    private static final int PAGE_LOAD_TIMEOUT_SECONDS = 45;
+    private static final int ELEMENT_WAIT_TIMEOUT_SECONDS = 30;
 
     @Autowired
     private SupabaseConfigStorageService supabaseStorage;
@@ -57,99 +61,39 @@ public class WorklogService {
 
             addStep(automationSteps, "Killing any existing Chrome processes...");
             killAllChromeProcesses();
-            Thread.sleep(2000);
+            Thread.sleep(3000);
 
             addStep(automationSteps, "Setting up ChromeDriver...");
             WebDriverManager.chromedriver().setup();
-            ChromeOptions options = new ChromeOptions();
-            options.addArguments(
-                    "--headless=new",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-blink-features=AutomationControlled",
-                    "--window-size=1280,720",
-                    "--disable-gpu",
-                    "--disable-extensions",
-                    "--disable-background-networking",
-                    "--disable-default-apps",
-                    "--disable-sync",
-                    "--no-first-run",
-                    "--disable-software-rasterizer",
-                    "--disable-crash-reporter",
-                    "--ignore-certificate-errors",
-                    "--disable-logging",
-                    "--log-level=3",
-                    "--silent",
-                    "--remote-debugging-port=9222",
-                    "--disable-features=VizDisplayCompositor,NetworkService",
-                    "--disable-web-security",
-                    "--enable-unsafe-swiftshader",
-                    "--remote-allow-origins=*",
-                    "--disable-images",
-                    "--blink-settings=imagesEnabled=false",
-                    "--disable-plugins",
-                    "--disable-accelerated-2d-canvas",
-                    "--disable-accelerated-jpeg-decoding",
-                    "--disable-accelerated-mjpeg-decode",
-                    "--disable-accelerated-video-decode",
-                    "--disable-background-timer-throttling",
-                    "--disable-backgrounding-occluded-windows",
-                    "--disable-renderer-backgrounding",
-                    "--disable-ipc-flooding-protection",
-                    "--disable-client-side-phishing-detection",
-                    "--disable-hang-monitor",
-                    "--disable-prompt-on-repost",
-                    "--disable-domain-reliability",
-                    "--disable-component-update"
-            );
-            options.setPageLoadStrategy(PageLoadStrategy.EAGER);
-            options.setAcceptInsecureCerts(true);
-
-            options.addArguments("--memory-pressure-off");
-            options.addArguments("--max-old-space-size=128");
-            options.addArguments("--js-flags=--max-old-space-size=128");
+            ChromeOptions options = createOptimizedChromeOptions();
 
             addStep(automationSteps, "Opening Chrome browser...");
             driver = new ChromeDriver(options);
-            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(60));
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(PAGE_LOAD_TIMEOUT_SECONDS));
             driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(30));
 
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(ELEMENT_WAIT_TIMEOUT_SECONDS));
             JavascriptExecutor js = (JavascriptExecutor) driver;
 
-            addStep(automationSteps, "Navigating to kalvium.community (required for cookies)...");
-            driver.get("https://kalvium.community");
+            addStep(automationSteps, "Navigating to kalvium.community with retry logic...");
+            navigateWithRetry(driver, js, "https://kalvium.community", automationSteps);
 
-            // Wait for page to be interactive
-            wait.until(webDriver -> {
-                String readyState = js.executeScript("return document.readyState").toString();
-                return "interactive".equals(readyState) || "complete".equals(readyState);
-            });
-
-            Thread.sleep(1000);
-
-            addStep(automationSteps, "Page loaded, current domain: " + driver.getCurrentUrl());
+            Thread.sleep(2000);
+            addStep(automationSteps, "Page loaded successfully, current URL: " + driver.getCurrentUrl());
 
             addStep(automationSteps, "Injecting authentication cookies...");
             injectCookies(driver, config);
             addStep(automationSteps, "Cookies injected successfully");
 
             addStep(automationSteps, "Navigating to internships page...");
-            driver.get("https://kalvium.community/internships");
+            navigateWithRetry(driver, js, "https://kalvium.community/internships", automationSteps);
 
-            // Wait for page to be interactive
-            wait.until(webDriver -> {
-                String readyState = js.executeScript("return document.readyState").toString();
-                return "interactive".equals(readyState) || "complete".equals(readyState);
-            });
-
-            Thread.sleep(2000);
+            Thread.sleep(3000);
 
             addStep(automationSteps, "Waiting for table to load...");
             try {
                 wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.xpath("//*[starts-with(@id, 'radix-')]/div/div[2]/table")));
+                    By.xpath(XPathLoader.get("table.main"))));
                 Thread.sleep(2000);
                 addStep(automationSteps, "Table found on page");
             } catch (Exception e) {
@@ -158,11 +102,11 @@ public class WorklogService {
 
             captureScreenshot(driver, screenshots, "Internships page loaded", config.getAuthSessionId());
 
-            addStep(automationSteps, "Looking for pending worklog button using provided xpath...");
+            addStep(automationSteps, "Looking for pending worklog button using XPath...");
 
             try {
                 List<WebElement> tableRows = driver.findElements(
-                    By.xpath("//*[starts-with(@id, 'radix-')]/div/div[2]/table/tbody/tr"));
+                    By.xpath(XPathLoader.get("table.rows")));
                 addStep(automationSteps, "Found " + tableRows.size() + " row(s) in table");
 
                 if (tableRows.isEmpty()) {
@@ -173,34 +117,7 @@ public class WorklogService {
                 addStep(automationSteps, "Warning: Could not check table rows - " + e.getMessage());
             }
 
-            WebElement completeButton = null;
-            try {
-                completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                        By.xpath("//*[starts-with(@id, 'radix-')]/div/div[2]/table/tbody/tr/td[3]/button")));
-                addStep(automationSteps, "Found button using primary xpath");
-            } catch (Exception e1) {
-                try {
-                    completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                            By.xpath("//table//tbody//tr//td//button[contains(text(), 'Complete') or contains(text(), 'complete') or @aria-label='Complete']")));
-                    addStep(automationSteps, "Found button using flexible xpath");
-                } catch (Exception e2) {
-                    try {
-                        completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                                By.xpath("//table//tbody//tr//td[3]//button")));
-                        addStep(automationSteps, "Found button using td[3] position");
-                    } catch (Exception e3) {
-                        try {
-                            completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                                    By.xpath("//table//tbody//tr[1]//td//button")));
-                            addStep(automationSteps, "Found first button in table");
-                        } catch (Exception e4) {
-                            completeButton = wait.until(ExpectedConditions.elementToBeClickable(
-                                    By.xpath("//table//tbody//tr//td//button")));
-                            addStep(automationSteps, "Found button using any button in table");
-                        }
-                    }
-                }
-            }
+            WebElement completeButton = findCompleteButton(wait, automationSteps);
 
             addStep(automationSteps, "Clicking Complete button...");
             js.executeScript("arguments[0].scrollIntoView({block: 'center'});", completeButton);
@@ -211,25 +128,26 @@ public class WorklogService {
             addStep(automationSteps, "Waiting for worklog form to appear...");
             try {
                 wait.until(ExpectedConditions.presenceOfElementLocated(
-                        By.xpath("//*[contains(text(), 'My Worklog') or contains(text(), 'Worklog') or contains(text(), 'worklog')]")));
+                        By.xpath(XPathLoader.get("form.heading.worklog"))));
                 Thread.sleep(2000);
                 addStep(automationSteps, "Worklog form heading found");
             } catch (Exception e) {
                 addStep(automationSteps, "Warning: Worklog heading not found, checking for form elements...");
-                wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//form")));
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath(XPathLoader.get("form.main"))));
                 Thread.sleep(2000);
                 addStep(automationSteps, "Form detected");
             }
             captureScreenshot(driver, screenshots, "Worklog form opened", config.getAuthSessionId());
 
-            addStep(automationSteps, "Filling out the form with optimized xpaths...");
-            fillFormOptimized(wait, js, config, automationSteps);
+            addStep(automationSteps, "Filling out the form using XPath locators...");
+            fillFormWithXPaths(wait, js, config, automationSteps);
             Thread.sleep(1000);
             captureScreenshot(driver, screenshots, "Form filled", config.getAuthSessionId());
 
             addStep(automationSteps, "Submitting the form...");
             WebElement submitButton = wait.until(ExpectedConditions.elementToBeClickable(
-                    By.xpath("//button[contains(text(), 'Submit') or @type='submit']")));
+                    By.xpath(XPathLoader.get("button.submit"))));
             js.executeScript("arguments[0].scrollIntoView({block: 'center'});", submitButton);
             Thread.sleep(500);
             js.executeScript("arguments[0].click();", submitButton);
@@ -287,6 +205,118 @@ public class WorklogService {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private ChromeOptions createOptimizedChromeOptions() {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments(
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+                "--window-size=1920,1080",
+                "--disable-gpu",
+                "--disable-extensions",
+                "--disable-background-networking",
+                "--disable-default-apps",
+                "--disable-sync",
+                "--no-first-run",
+                "--disable-software-rasterizer",
+                "--disable-crash-reporter",
+                "--ignore-certificate-errors",
+                "--disable-logging",
+                "--log-level=3",
+                "--silent",
+                "--disable-web-security",
+                "--remote-allow-origins=*",
+                "--disable-plugins",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-client-side-phishing-detection",
+                "--disable-hang-monitor",
+                "--disable-prompt-on-repost",
+                "--disable-domain-reliability",
+                "--disable-component-update",
+                "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+                "--enable-features=NetworkService,NetworkServiceInProcess"
+        );
+        options.setPageLoadStrategy(PageLoadStrategy.NORMAL);
+        options.setAcceptInsecureCerts(true);
+
+        return options;
+    }
+
+    private void navigateWithRetry(WebDriver driver, JavascriptExecutor js, String url, List<String> automationSteps) throws InterruptedException {
+        int retryCount = 0;
+        Exception lastException = null;
+
+        while (retryCount < MAX_NAVIGATION_RETRIES) {
+            try {
+                addStep(automationSteps, "Navigation attempt " + (retryCount + 1) + "/" + MAX_NAVIGATION_RETRIES + " to " + url);
+
+                driver.get(url);
+
+                WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(10));
+                shortWait.until(webDriver -> {
+                    String readyState = js.executeScript("return document.readyState").toString();
+                    return "interactive".equals(readyState) || "complete".equals(readyState);
+                });
+
+                addStep(automationSteps, "Navigation successful on attempt " + (retryCount + 1));
+                return;
+
+            } catch (Exception e) {
+                lastException = e;
+                retryCount++;
+                addStep(automationSteps, "Navigation attempt " + retryCount + " failed: " + e.getMessage());
+
+                if (retryCount < MAX_NAVIGATION_RETRIES) {
+                    addStep(automationSteps, "Waiting 5 seconds before retry...");
+                    Thread.sleep(5000);
+
+                    try {
+                        js.executeScript("window.stop();");
+                    } catch (Exception stopEx) {
+                        logger.warn("Could not stop page load: " + stopEx.getMessage());
+                    }
+                }
+            }
+        }
+
+        throw new RuntimeException("Failed to navigate to " + url + " after " + MAX_NAVIGATION_RETRIES + " attempts", lastException);
+    }
+
+    private WebElement findCompleteButton(WebDriverWait wait, List<String> automationSteps) {
+        String[] buttonXPaths = {
+            XPathLoader.get("table.complete.button.primary"),
+            XPathLoader.get("table.complete.button.text"),
+            XPathLoader.get("table.complete.button.position"),
+            XPathLoader.get("table.complete.button.first"),
+            XPathLoader.get("table.complete.button.any")
+        };
+
+        String[] buttonDescriptions = {
+            "primary xpath (radix pattern)",
+            "text-based xpath",
+            "position-based xpath (td[3])",
+            "first button xpath",
+            "any button xpath"
+        };
+
+        for (int i = 0; i < buttonXPaths.length; i++) {
+            try {
+                WebElement button = wait.until(ExpectedConditions.elementToBeClickable(
+                        By.xpath(buttonXPaths[i])));
+                addStep(automationSteps, "Found button using " + buttonDescriptions[i]);
+                return button;
+            } catch (Exception e) {
+                addStep(automationSteps, "Button not found with " + buttonDescriptions[i] + ", trying next...");
+            }
+        }
+
+        throw new RuntimeException("Could not find Complete button with any XPath strategy");
     }
 
     @SuppressWarnings("UseSpecificCatch")
@@ -365,7 +395,6 @@ public class WorklogService {
     private void injectCookies(WebDriver driver, AuthConfig config) {
         JavascriptExecutor js = (JavascriptExecutor) driver;
 
-        // Wait for page to be in a state where it can accept cookies
         try {
             WebDriverWait cookieWait = new WebDriverWait(driver, Duration.ofSeconds(10));
             cookieWait.until(webDriver -> {
@@ -400,7 +429,6 @@ public class WorklogService {
             keycloakSession = parts[0];
         }
 
-        // Add cookies with retry logic
         addCookieWithRetry(driver, "AUTH_SESSION_ID", authSessionId);
         addCookieWithRetry(driver, "AUTH_SESSION_ID_LEGACY", authSessionId);
         addCookieWithRetry(driver, "KEYCLOAK_IDENTITY", keycloakIdentity);
@@ -408,7 +436,6 @@ public class WorklogService {
         addCookieWithRetry(driver, "KEYCLOAK_SESSION", keycloakSession);
         addCookieWithRetry(driver, "KEYCLOAK_SESSION_LEGACY", keycloakSession);
 
-        // Verify cookies were set
         int cookiesSet = driver.manage().getCookies().size();
         logger.info("Cookies injected successfully for user ({} cookies total)", cookiesSet);
     }
@@ -443,95 +470,12 @@ public class WorklogService {
     }
 
     @SuppressWarnings("UseSpecificCatch")
-    private void fillFormOptimized(WebDriverWait wait, JavascriptExecutor js,
-                                   AuthConfig config, List<String> automationSteps) throws InterruptedException {
+    private void fillFormWithXPaths(WebDriverWait wait, JavascriptExecutor js,
+                                    AuthConfig config, List<String> automationSteps) throws InterruptedException {
 
-        addStep(automationSteps, "Looking for work status dropdown...");
+        addStep(automationSteps, "Looking for work status dropdown using XPaths...");
 
-        boolean dropdownSelected = false;
-
-        try {
-            WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select")));
-            addStep(automationSteps, "Found select element using full XPath");
-
-            js.executeScript("arguments[0].scrollIntoView({block: 'center'});", selectElement);
-            Thread.sleep(500);
-
-            js.executeScript(
-                "var select = arguments[0];" +
-                "select.selectedIndex = 0;" +
-                "select.dispatchEvent(new Event('change', { bubbles: true }));" +
-                "select.dispatchEvent(new Event('input', { bubbles: true }));",
-                selectElement);
-
-            addStep(automationSteps, "Selected option[0] (Working Day - Kalvium Environment) from dropdown using full XPath");
-            dropdownSelected = true;
-            Thread.sleep(2000);
-        } catch (Exception e1) {
-            addStep(automationSteps, "Full XPath select not found, trying alternative: " + e1.getMessage());
-
-            try {
-                WebElement dropdownButton = wait.until(ExpectedConditions.elementToBeClickable(
-                        By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/button")));
-                addStep(automationSteps, "Found dropdown button using full XPath");
-
-                js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdownButton);
-                Thread.sleep(500);
-
-                js.executeScript("arguments[0].click();", dropdownButton);
-                addStep(automationSteps, "Clicked dropdown button");
-                Thread.sleep(1000);
-
-                try {
-                    WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
-                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select")));
-                    js.executeScript(
-                        "var select = arguments[0];" +
-                        "select.selectedIndex = 0;" +
-                        "select.dispatchEvent(new Event('change', { bubbles: true }));" +
-                        "select.dispatchEvent(new Event('input', { bubbles: true }));",
-                        selectElement);
-                    addStep(automationSteps, "Selected option after clicking button");
-                    dropdownSelected = true;
-                    Thread.sleep(2000);
-                } catch (Exception e) {
-                    WebElement option = wait.until(ExpectedConditions.elementToBeClickable(
-                            By.xpath("/html/body/div[4]/div[2]/form/div[1]/div/select/option[0]")));
-                    js.executeScript("arguments[0].selected = true; arguments[0].parentElement.dispatchEvent(new Event('change', { bubbles: true }));", option);
-                    addStep(automationSteps, "Clicked option[0] (Working Day - Kalvium Environment) directly");
-                    dropdownSelected = true;
-                    Thread.sleep(2000);
-                }
-            } catch (Exception e2) {
-                addStep(automationSteps, "Full XPath button approach failed: " + e2.getMessage());
-
-                try {
-                    WebElement dropdown = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[@id='workType']")));
-                    addStep(automationSteps, "Found dropdown using ID='workType'");
-
-                    js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdown);
-                    Thread.sleep(500);
-
-                    js.executeScript(
-                        "var select = arguments[0];" +
-                        "if (select.tagName === 'SELECT') {" +
-                        "  select.selectedIndex = 0;" +
-                        "  select.dispatchEvent(new Event('change', { bubbles: true }));" +
-                        "  select.dispatchEvent(new Event('input', { bubbles: true }));" +
-                        "} else if (select.tagName === 'BUTTON') {" +
-                        "  select.click();" +
-                        "}",
-                        dropdown);
-
-                    addStep(automationSteps, "Selected using ID-based approach");
-                    dropdownSelected = true;
-                    Thread.sleep(2000);
-                } catch (Exception e3) {
-                    addStep(automationSteps, "ERROR: All dropdown strategies failed - " + e3.getMessage());
-                }
-            }
-        }
+        boolean dropdownSelected = selectDropdown(wait, js, automationSteps);
 
         if (!dropdownSelected) {
             addStep(automationSteps, "WARNING: Dropdown selection failed - editor may not appear!");
@@ -543,43 +487,9 @@ public class WorklogService {
         String challengesContent = config.getChallenges() != null ? config.getChallenges() : "NA";
         String blockersContent = config.getBlockers() != null ? config.getBlockers() : "NA";
 
-        addStep(automationSteps, "Looking for contenteditable worklog field...");
+        addStep(automationSteps, "Looking for contenteditable worklog field using XPaths...");
 
-        WebElement worklogField = null;
-        try {
-            Thread.sleep(2000);
-
-            try {
-                worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.xpath("//*[starts-with(@id, 'radix-')]/div[2]/form/div[1]/div[2]/div/div[2]/div")));
-                addStep(automationSteps, "Found editor using radix-based XPath pattern");
-            } catch (Exception e1) {
-                try {
-                    worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                        By.xpath("//div[@contenteditable='true']")));
-                    addStep(automationSteps, "Found contenteditable field using generic xpath");
-                } catch (Exception e2) {
-                    try {
-                        worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                            By.xpath("//div[contains(@class, 'ProseMirror') or contains(@class, 'tiptap')]")));
-                        addStep(automationSteps, "Found contenteditable field using ProseMirror/tiptap class");
-                    } catch (Exception e3) {
-                        try {
-                            worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                                By.xpath("//form//div[@contenteditable='true']")));
-                            addStep(automationSteps, "Found contenteditable field inside form");
-                        } catch (Exception e4) {
-                            worklogField = wait.until(ExpectedConditions.presenceOfElementLocated(
-                                By.xpath("//*[@id='workType']/ancestor::form//div[@contenteditable='true']")));
-                            addStep(automationSteps, "Found editor by searching after dropdown in form");
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            addStep(automationSteps, "ERROR: Could not find worklog field after " + (dropdownSelected ? "dropdown was selected" : "dropdown selection failed") + " - " + e.getMessage());
-            throw e;
-        }
+        WebElement worklogField = findWorklogEditor(wait, automationSteps, dropdownSelected);
 
         addStep(automationSteps, "Updating worklog content...");
         String originalHtml = (String) js.executeScript("return arguments[0].innerHTML;", worklogField);
@@ -594,6 +504,103 @@ public class WorklogService {
 
         Thread.sleep(500);
         addStep(automationSteps, "Form filled successfully");
+    }
+
+    private boolean selectDropdown(WebDriverWait wait, JavascriptExecutor js, List<String> automationSteps) throws InterruptedException {
+        try {
+            WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath(XPathLoader.get("dropdown.select.main"))));
+            addStep(automationSteps, "Found select element using dropdown.select.main XPath");
+
+            js.executeScript("arguments[0].scrollIntoView({block: 'center'});", selectElement);
+            Thread.sleep(500);
+
+            js.executeScript(
+                "var select = arguments[0];" +
+                "select.selectedIndex = 0;" +
+                "select.dispatchEvent(new Event('change', { bubbles: true }));" +
+                "select.dispatchEvent(new Event('input', { bubbles: true }));",
+                selectElement);
+
+            addStep(automationSteps, "Selected option[0] from dropdown using XPath");
+            Thread.sleep(2000);
+            return true;
+        } catch (Exception e1) {
+            addStep(automationSteps, "Select element not found, trying button approach: " + e1.getMessage());
+
+            try {
+                WebElement dropdownButton = wait.until(ExpectedConditions.elementToBeClickable(
+                        By.xpath(XPathLoader.get("dropdown.button.main"))));
+                addStep(automationSteps, "Found dropdown button using dropdown.button.main XPath");
+
+                js.executeScript("arguments[0].scrollIntoView({block: 'center'});", dropdownButton);
+                Thread.sleep(500);
+
+                js.executeScript("arguments[0].click();", dropdownButton);
+                addStep(automationSteps, "Clicked dropdown button");
+                Thread.sleep(1000);
+
+                try {
+                    WebElement selectElement = wait.until(ExpectedConditions.presenceOfElementLocated(
+                            By.xpath(XPathLoader.get("dropdown.select.main"))));
+                    js.executeScript(
+                        "var select = arguments[0];" +
+                        "select.selectedIndex = 0;" +
+                        "select.dispatchEvent(new Event('change', { bubbles: true }));" +
+                        "select.dispatchEvent(new Event('input', { bubbles: true }));",
+                        selectElement);
+                    addStep(automationSteps, "Selected option after clicking button");
+                    Thread.sleep(2000);
+                    return true;
+                } catch (Exception e) {
+                    WebElement option = wait.until(ExpectedConditions.elementToBeClickable(
+                            By.xpath(XPathLoader.get("dropdown.option.first"))));
+                    js.executeScript("arguments[0].selected = true; arguments[0].parentElement.dispatchEvent(new Event('change', { bubbles: true }));", option);
+                    addStep(automationSteps, "Clicked option directly using dropdown.option.first XPath");
+                    Thread.sleep(2000);
+                    return true;
+                }
+            } catch (Exception e2) {
+                addStep(automationSteps, "All dropdown XPath strategies failed: " + e2.getMessage());
+                return false;
+            }
+        }
+    }
+
+    private WebElement findWorklogEditor(WebDriverWait wait, List<String> automationSteps, boolean dropdownSelected) throws InterruptedException {
+        Thread.sleep(2000);
+
+        String[] editorXPaths = {
+            XPathLoader.get("editor.radix.pattern"),
+            XPathLoader.get("editor.contenteditable.main"),
+            XPathLoader.get("editor.tiptap"),
+            XPathLoader.get("editor.contenteditable.form"),
+            XPathLoader.get("editor.any.contenteditable")
+        };
+
+        String[] editorDescriptions = {
+            "editor.radix.pattern",
+            "editor.contenteditable.main",
+            "editor.tiptap",
+            "editor.contenteditable.form",
+            "editor.any.contenteditable"
+        };
+
+        for (int i = 0; i < editorXPaths.length; i++) {
+            try {
+                WebElement editor = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath(editorXPaths[i])));
+                addStep(automationSteps, "Found editor using " + editorDescriptions[i] + " XPath");
+                return editor;
+            } catch (Exception e) {
+                addStep(automationSteps, "Editor not found with " + editorDescriptions[i] + ", trying next...");
+            }
+        }
+
+        String errorMsg = "Could not find worklog field after " +
+                         (dropdownSelected ? "dropdown was selected" : "dropdown selection failed");
+        addStep(automationSteps, "ERROR: " + errorMsg);
+        throw new RuntimeException(errorMsg);
     }
 
     private String escapeHtml(String text) {

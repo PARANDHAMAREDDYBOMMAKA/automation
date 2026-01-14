@@ -29,10 +29,8 @@ RUN mkdir -p /app/data \
     && mkdir -p /dev/shm \
     && chmod 1777 /dev/shm
 
-# Configure shared memory for Chrome
 VOLUME /dev/shm
 
-# Create a startup script that clears memory before running
 RUN echo '#!/bin/sh\n\
 # Clear system caches and free memory\n\
 sync\n\

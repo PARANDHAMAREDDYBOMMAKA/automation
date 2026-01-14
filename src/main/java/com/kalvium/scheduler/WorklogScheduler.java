@@ -23,6 +23,7 @@ import org.springframework.web.client.RestTemplate;
 
 import com.kalvium.service.SupabaseConfigStorageService;
 import com.kalvium.service.WorklogService;
+import com.kalvium.service.EmailService;
 
 @Component
 public class WorklogScheduler {
@@ -34,6 +35,9 @@ public class WorklogScheduler {
 
     @Autowired
     private SupabaseConfigStorageService configStorage;
+
+    @Autowired
+    private EmailService emailService;
 
     @Value("${app.base.url:http://localhost:8080}")
     private String appBaseUrl;
@@ -72,7 +76,6 @@ public class WorklogScheduler {
         }
     }
 
-    // Scheduled time set to 5:00 PM IST (Asia/Kolkata) on weekdays
     @Scheduled(cron = "0 00 17 * * MON-FRI", zone = "Asia/Kolkata")
     @SuppressWarnings("BusyWait")
     public void runDailyWorklogSubmission() {
@@ -107,15 +110,27 @@ public class WorklogScheduler {
                     if (result.startsWith("SUCCESS")) {
                         successCount++;
                         logger.info("✓ User {}/{} worklog submitted successfully", (i + 1), configs.size());
+
+                        String userId = "User " + (i + 1) + "/" + configs.size();
+                        emailService.sendSuccessNotification(userId, result);
                     } else {
                         failCount++;
                         logger.error("✗ User {}/{} worklog submission failed", (i + 1), configs.size());
                         logger.error("Full error for user {}/{}: {}", (i + 1), configs.size(), result);
+
+                        String userId = "User " + (i + 1) + "/" + configs.size();
+                        String errorMessage = result.startsWith("ERROR:") ? result : "ERROR: " + result;
+                        emailService.sendErrorNotification(userId, errorMessage, result);
                     }
                 } catch (Exception e) {
                     failCount++;
                     logger.error("✗ Exception processing user {}/{}", (i + 1), configs.size());
                     logger.error("Exception details: {}", e.getMessage(), e);
+
+                    String userId = "User " + (i + 1) + "/" + configs.size();
+                    String errorMessage = "Exception occurred: " + e.getMessage();
+                    String stackTrace = e.getClass().getName() + ": " + e.getMessage();
+                    emailService.sendErrorNotification(userId, errorMessage, stackTrace);
                 }
 
                 if (i < configs.size() - 1) {
@@ -132,6 +147,8 @@ public class WorklogScheduler {
 
             logger.info("=== Processing Summary: {} successful, {} failed out of {} total users ===",
                     successCount, failCount, configs.size());
+
+            emailService.sendDeploymentSummary(configs.size(), successCount, failCount);
 
         } catch (Exception e) {
             logger.error("Error during scheduled worklog submission", e);
