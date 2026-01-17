@@ -47,22 +47,14 @@ exec java $JAVA_OPTS -jar /app/app.jar\n\
 
 EXPOSE 8080
 
-ENV JAVA_OPTS="-Xms256m -Xmx512m \
-    -XX:MetaspaceSize=96m -XX:MaxMetaspaceSize=192m \
-    -XX:+UseG1GC -XX:MaxGCPauseMillis=200 \
-    -XX:G1HeapRegionSize=1m \
-    -XX:InitiatingHeapOccupancyPercent=70 \
-    -XX:+UseStringDeduplication \
-    -XX:+OptimizeStringConcat \
+ENV JAVA_OPTS="-Xms128m -Xmx320m \
+    -XX:MetaspaceSize=64m -XX:MaxMetaspaceSize=128m \
+    -XX:+UseSerialGC \
     -XX:+UseCompressedOops \
     -XX:+UseCompressedClassPointers \
-    -XX:+ParallelRefProcEnabled \
-    -XX:+DisableExplicitGC \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/app/data/heap_dump.hprof \
     -XX:+ExitOnOutOfMemoryError \
-    -XX:ConcGCThreads=1 \
-    -XX:ParallelGCThreads=2 \
     -Djava.security.egd=file:/dev/./urandom \
     -Djava.awt.headless=true"
 

@@ -20,6 +20,7 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.kalvium.model.AuthConfig;
@@ -32,11 +33,14 @@ public class WorklogService {
 
     private static final Logger logger = LoggerFactory.getLogger(WorklogService.class);
     private static final int MAX_NAVIGATION_RETRIES = 3;
-    private static final int PAGE_LOAD_TIMEOUT_SECONDS = 45;
+    private static final int PAGE_LOAD_TIMEOUT_SECONDS = 60;
     private static final int ELEMENT_WAIT_TIMEOUT_SECONDS = 30;
 
     @Autowired
     private SupabaseConfigStorageService supabaseStorage;
+
+    @Value("${chrome.headless:true}")
+    private boolean chromeHeadless;
 
     private static class Screenshot {
         String description;
@@ -71,6 +75,7 @@ public class WorklogService {
             driver = new ChromeDriver(options);
             driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(PAGE_LOAD_TIMEOUT_SECONDS));
             driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(30));
+            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(5));
 
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(ELEMENT_WAIT_TIMEOUT_SECONDS));
             JavascriptExecutor js = (JavascriptExecutor) driver;
@@ -145,6 +150,9 @@ public class WorklogService {
             Thread.sleep(1000);
             captureScreenshot(driver, screenshots, "Form filled", config.getAuthSessionId());
 
+            addStep(automationSteps, "Waiting 1 minute for form content to be replaced...");
+            Thread.sleep(60000);
+
             addStep(automationSteps, "Submitting the form...");
             WebElement submitButton = wait.until(ExpectedConditions.elementToBeClickable(
                     By.xpath(XPathLoader.get("button.submit"))));
@@ -209,26 +217,54 @@ public class WorklogService {
 
     private ChromeOptions createOptimizedChromeOptions() {
         ChromeOptions options = new ChromeOptions();
+
+        if (chromeHeadless) {
+            options.addArguments("--headless=new");
+            logger.info("Running Chrome in headless mode");
+
+            options.addArguments(
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--window-size=1024,768",
+                    "--js-flags=--max-old-space-size=128",
+                    "--single-process",
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--disable-site-isolation-trials",
+                    "--disable-ipc-flooding-protection",
+                    "--memory-pressure-off",
+                    "--disable-breakpad",
+                    "--disable-features=VizDisplayCompositor,TranslateUI,BlinkGenPropertyTrees",
+                    "--renderer-process-limit=1",
+                    "--disable-partial-raster",
+                    "--disable-skia-runtime-opts",
+                    "--disable-logging",
+                    "--disable-infobars",
+                    "--disable-notifications",
+                    "--disable-popup-blocking",
+                    "--disable-save-password-bubble",
+                    "--disable-translate",
+                    "--no-default-browser-check",
+                    "--aggressive-cache-discard",
+                    "--disable-cache",
+                    "--disable-application-cache",
+                    "--disk-cache-size=1"
+            );
+        } else {
+            logger.info("Running Chrome in visible mode (for local debugging)");
+            options.addArguments("--window-size=1280,720");
+        }
+
         options.addArguments(
-                "--headless=new",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
-                "--window-size=1920,1080",
-                "--disable-gpu",
                 "--disable-extensions",
                 "--disable-background-networking",
                 "--disable-default-apps",
                 "--disable-sync",
                 "--no-first-run",
-                "--disable-software-rasterizer",
                 "--disable-crash-reporter",
                 "--ignore-certificate-errors",
-                "--disable-logging",
-                "--log-level=3",
-                "--silent",
-                "--disable-web-security",
                 "--remote-allow-origins=*",
                 "--disable-plugins",
                 "--disable-background-timer-throttling",
@@ -238,11 +274,10 @@ public class WorklogService {
                 "--disable-hang-monitor",
                 "--disable-prompt-on-repost",
                 "--disable-domain-reliability",
-                "--disable-component-update",
-                "--disable-features=TranslateUI,BlinkGenPropertyTrees",
-                "--enable-features=NetworkService,NetworkServiceInProcess"
+                "--disable-component-update"
         );
-        options.setPageLoadStrategy(PageLoadStrategy.NORMAL);
+
+        options.setPageLoadStrategy(PageLoadStrategy.EAGER);
         options.setAcceptInsecureCerts(true);
 
         return options;
@@ -256,9 +291,11 @@ public class WorklogService {
             try {
                 addStep(automationSteps, "Navigation attempt " + (retryCount + 1) + "/" + MAX_NAVIGATION_RETRIES + " to " + url);
 
+                System.gc();
+
                 driver.get(url);
 
-                WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(10));
+                WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(20));
                 shortWait.until(webDriver -> {
                     String readyState = js.executeScript("return document.readyState").toString();
                     return "interactive".equals(readyState) || "complete".equals(readyState);
@@ -273,14 +310,16 @@ public class WorklogService {
                 addStep(automationSteps, "Navigation attempt " + retryCount + " failed: " + e.getMessage());
 
                 if (retryCount < MAX_NAVIGATION_RETRIES) {
-                    addStep(automationSteps, "Waiting 5 seconds before retry...");
-                    Thread.sleep(5000);
-
                     try {
                         js.executeScript("window.stop();");
                     } catch (Exception stopEx) {
                         logger.warn("Could not stop page load: " + stopEx.getMessage());
                     }
+
+                    addStep(automationSteps, "Waiting 10 seconds before retry...");
+                    Thread.sleep(10000);
+
+                    System.gc();
                 }
             }
         }

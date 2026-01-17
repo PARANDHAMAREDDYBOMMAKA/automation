@@ -21,9 +21,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import com.kalvium.service.EmailService;
 import com.kalvium.service.SupabaseConfigStorageService;
 import com.kalvium.service.WorklogService;
-import com.kalvium.service.EmailService;
 
 @Component
 public class WorklogScheduler {

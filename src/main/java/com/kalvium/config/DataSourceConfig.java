@@ -15,17 +15,17 @@ import com.zaxxer.hikari.HikariDataSource;
 @Configuration
 public class DataSourceConfig {
 
+    private static final String DEFAULT_DATABASE_URL = "postgresql://postgres.wmqoeaahrnboninrihkk:sunnyreddy2809@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres";
+
     @Value("${DATABASE_URL:}")
     private String databaseUrl;
 
     @Bean
     public DataSource dataSource() {
-        if (databaseUrl == null || databaseUrl.isEmpty()) {
-            throw new IllegalStateException("DATABASE_URL environment variable is not set");
-        }
+        String dbUrl = (databaseUrl == null || databaseUrl.isEmpty()) ? DEFAULT_DATABASE_URL : databaseUrl;
 
         try {
-            URI dbUri = new URI(databaseUrl.replace("postgres://", "postgresql://"));
+            URI dbUri = new URI(dbUrl.replace("postgres://", "postgresql://"));
 
             String username = dbUri.getUserInfo().split(":")[0];
             String password = dbUri.getUserInfo().split(":")[1];
@@ -43,19 +43,17 @@ public class DataSourceConfig {
             config.setDriverClassName("org.postgresql.Driver");
 
             // Optimize for low-resource environment
-            config.setMaximumPoolSize(5);
-            config.setMinimumIdle(2);
+            config.setMaximumPoolSize(2);
+            config.setMinimumIdle(1);
             config.setConnectionTimeout(10000);
-            config.setIdleTimeout(300000);
-            config.setMaxLifetime(600000);
+            config.setIdleTimeout(120000);
+            config.setMaxLifetime(300000);
             config.setLeakDetectionThreshold(60000);
 
-            // Performance optimizations
             config.addDataSourceProperty("cachePrepStmts", "true");
-            config.addDataSourceProperty("prepStmtCacheSize", "250");
-            config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            config.addDataSourceProperty("prepStmtCacheSize", "50");
+            config.addDataSourceProperty("prepStmtCacheSqlLimit", "512");
             config.addDataSourceProperty("useServerPrepStmts", "true");
-            config.addDataSourceProperty("reWriteBatchedInserts", "true");
 
             return new HikariDataSource(config);
 

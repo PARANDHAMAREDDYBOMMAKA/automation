@@ -16,9 +16,13 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import com.kalvium.model.AuthConfig;
 import com.kalvium.service.SupabaseConfigStorageService;
 import com.kalvium.service.WorklogService;
+import com.kalvium.scheduler.WorklogScheduler;
 
 @Controller
 public class WorklogController {
+
+    @Autowired
+    private WorklogScheduler worklogScheduler;
 
     private static final Logger logger = LoggerFactory.getLogger(WorklogController.class);
 
@@ -118,6 +122,23 @@ public class WorklogController {
             response.put("status", "success");
             response.put("message", "Database reset successfully. Deleted " + userCount + " user configuration(s).");
             logger.info("Database reset via API - deleted {} users", userCount);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("status", "error");
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @PostMapping("/api/trigger")
+    @ResponseBody
+    public ResponseEntity<Map<String, String>> triggerWorklog() {
+        Map<String, String> response = new HashMap<>();
+        try {
+            logger.info("Manually triggering worklog submission via API");
+            new Thread(() -> worklogScheduler.runDailyWorklogSubmission()).start();
+            response.put("status", "success");
+            response.put("message", "Worklog submission triggered! Check logs for progress.");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             response.put("status", "error");
