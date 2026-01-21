@@ -426,7 +426,6 @@ public class WorklogService {
 
         driver.manage().deleteAllCookies();
 
-        // Clear browser storage to ensure clean session for each user
         try {
             js.executeScript("window.localStorage.clear(); window.sessionStorage.clear();");
             logger.info("Cleared localStorage and sessionStorage");
@@ -550,21 +549,17 @@ public class WorklogService {
             js.executeScript("arguments[0].scrollIntoView({block: 'center'});", element);
             Thread.sleep(300);
 
-            // Click to focus and select all text, then replace with new content
             js.executeScript(
                 "var el = arguments[0];" +
                 "el.click();" +
                 "el.focus();" +
-                // Select all text in the element
                 "var range = document.createRange();" +
                 "range.selectNodeContents(el);" +
                 "var sel = window.getSelection();" +
                 "sel.removeAllRanges();" +
                 "sel.addRange(range);" +
-                // Delete selected text and insert new text
                 "document.execCommand('delete', false, null);" +
                 "document.execCommand('insertText', false, arguments[1]);" +
-                // Trigger events to update editor state
                 "el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: arguments[1] }));" +
                 "el.dispatchEvent(new Event('change', { bubbles: true }));",
                 element, newText);

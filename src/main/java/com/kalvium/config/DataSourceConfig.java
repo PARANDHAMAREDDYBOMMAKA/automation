@@ -35,14 +35,12 @@ public class DataSourceConfig {
 
             String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", host, port, database);
 
-            // Use HikariCP for optimized connection pooling
             HikariConfig config = new HikariConfig();
             config.setJdbcUrl(jdbcUrl);
             config.setUsername(username);
             config.setPassword(password);
             config.setDriverClassName("org.postgresql.Driver");
 
-            // Optimize for low-resource environment
             config.setMaximumPoolSize(2);
             config.setMinimumIdle(1);
             config.setConnectionTimeout(10000);

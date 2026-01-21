@@ -40,7 +40,6 @@ public class SupabaseConfigStorageService {
     private void verifyDatabaseConnection() {
         try (Connection conn = getConnection()) {
             try (Statement stmt = conn.createStatement()) {
-                // Just verify connection and count existing data
                 try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + TABLE_NAME)) {
                     if (rs.next()) {
                         int rowCount = rs.getInt(1);
