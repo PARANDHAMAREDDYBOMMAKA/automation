@@ -150,9 +150,6 @@ public class WorklogService {
             Thread.sleep(1000);
             captureScreenshot(driver, screenshots, "Form filled", config.getAuthSessionId());
 
-            addStep(automationSteps, "Waiting 1 minute for form content to be replaced...");
-            Thread.sleep(60000);
-
             addStep(automationSteps, "Submitting the form...");
             WebElement submitButton = wait.until(ExpectedConditions.elementToBeClickable(
                     By.xpath(XPathLoader.get("button.submit"))));
@@ -328,34 +325,15 @@ public class WorklogService {
     }
 
     private WebElement findCompleteButton(WebDriverWait wait, List<String> automationSteps) {
-        String[] buttonXPaths = {
-            XPathLoader.get("table.complete.button.primary"),
-            XPathLoader.get("table.complete.button.text"),
-            XPathLoader.get("table.complete.button.position"),
-            XPathLoader.get("table.complete.button.first"),
-            XPathLoader.get("table.complete.button.any")
-        };
-
-        String[] buttonDescriptions = {
-            "primary xpath (radix pattern)",
-            "text-based xpath",
-            "position-based xpath (td[3])",
-            "first button xpath",
-            "any button xpath"
-        };
-
-        for (int i = 0; i < buttonXPaths.length; i++) {
-            try {
-                WebElement button = wait.until(ExpectedConditions.elementToBeClickable(
-                        By.xpath(buttonXPaths[i])));
-                addStep(automationSteps, "Found button using " + buttonDescriptions[i]);
-                return button;
-            } catch (Exception e) {
-                addStep(automationSteps, "Button not found with " + buttonDescriptions[i] + ", trying next...");
-            }
+        try {
+            WebElement button = wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath(XPathLoader.get("table.complete.button.primary"))));
+            addStep(automationSteps, "Found Complete button using primary XPath");
+            return button;
+        } catch (Exception e) {
+            addStep(automationSteps, "Complete button not found: " + e.getMessage());
+            throw new RuntimeException("Could not find Complete button");
         }
-
-        throw new RuntimeException("Could not find Complete button with any XPath strategy");
     }
 
     @SuppressWarnings("UseSpecificCatch")
@@ -522,27 +500,84 @@ public class WorklogService {
             addStep(automationSteps, "Dropdown successfully selected, waiting for editor to load...");
         }
 
-        String tasksContent = config.getTasksCompleted() != null ? config.getTasksCompleted() : "Completed assigned tasks";
+        Thread.sleep(3000);
+
+        String tasksContent = config.getTasksCompleted() != null ? config.getTasksCompleted() : "Need to complete the tasks assigned..";
         String challengesContent = config.getChallenges() != null ? config.getChallenges() : "NA";
         String blockersContent = config.getBlockers() != null ? config.getBlockers() : "NA";
 
-        addStep(automationSteps, "Looking for contenteditable worklog field using XPaths...");
-
-        WebElement worklogField = findWorklogEditor(wait, automationSteps, dropdownSelected);
-
-        addStep(automationSteps, "Updating worklog content...");
-        String originalHtml = (String) js.executeScript("return arguments[0].innerHTML;", worklogField);
-
-        String updatedHtml = updateAllListSections(originalHtml, tasksContent, challengesContent, blockersContent);
-
-        js.executeScript(
-            "arguments[0].innerHTML = arguments[1];" +
-            "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));" +
-            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
-            worklogField, updatedHtml);
-
+        addStep(automationSteps, "Updating Tasks section...");
+        updateFieldByXPath(wait, js, XPathLoader.get("tasks.first.item"), tasksContent, automationSteps);
         Thread.sleep(500);
+
+        addStep(automationSteps, "Removing 'Add more tasks' item...");
+        removeElementByXPath(js, XPathLoader.get("tasks.add.more"), automationSteps);
+        Thread.sleep(500);
+
+        addStep(automationSteps, "Updating Challenges section...");
+        updateFieldByXPath(wait, js, XPathLoader.get("challenges.first.item"), challengesContent, automationSteps);
+        Thread.sleep(500);
+
+        addStep(automationSteps, "Removing 'Add any obstacles' item...");
+        removeElementByXPath(js, XPathLoader.get("challenges.add.more"), automationSteps);
+        Thread.sleep(500);
+
+        addStep(automationSteps, "Updating Blockers section...");
+        updateFieldByXPath(wait, js, XPathLoader.get("blockers.first.item"), blockersContent, automationSteps);
+        Thread.sleep(500);
+
+        addStep(automationSteps, "Removing 'Add any blockers faced' item...");
+        removeElementByXPath(js, XPathLoader.get("blockers.add.more"), automationSteps);
+        Thread.sleep(500);
+
         addStep(automationSteps, "Form filled successfully");
+    }
+
+    private void updateFieldByXPath(WebDriverWait wait, JavascriptExecutor js, String xpath, String newText, List<String> automationSteps) {
+        try {
+            WebElement element = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath(xpath)));
+            js.executeScript("arguments[0].scrollIntoView({block: 'center'});", element);
+            Thread.sleep(300);
+
+            // Click to focus and select all text, then replace with new content
+            js.executeScript(
+                "var el = arguments[0];" +
+                "el.click();" +
+                "el.focus();" +
+                // Select all text in the element
+                "var range = document.createRange();" +
+                "range.selectNodeContents(el);" +
+                "var sel = window.getSelection();" +
+                "sel.removeAllRanges();" +
+                "sel.addRange(range);" +
+                // Delete selected text and insert new text
+                "document.execCommand('delete', false, null);" +
+                "document.execCommand('insertText', false, arguments[1]);" +
+                // Trigger events to update editor state
+                "el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: arguments[1] }));" +
+                "el.dispatchEvent(new Event('change', { bubbles: true }));",
+                element, newText);
+
+            addStep(automationSteps, "Updated element at: " + xpath);
+        } catch (Exception e) {
+            addStep(automationSteps, "WARNING: Could not update element at " + xpath + ": " + e.getMessage());
+        }
+    }
+
+    private void removeElementByXPath(JavascriptExecutor js, String xpath, List<String> automationSteps) {
+        try {
+            js.executeScript(
+                "var el = document.evaluate(arguments[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;" +
+                "if (el) {" +
+                "  el.parentNode.removeChild(el);" +
+                "  return true;" +
+                "}" +
+                "return false;",
+                xpath);
+            addStep(automationSteps, "Removed element at: " + xpath);
+        } catch (Exception e) {
+            addStep(automationSteps, "WARNING: Could not remove element at " + xpath + ": " + e.getMessage());
+        }
     }
 
     private boolean selectDropdown(WebDriverWait wait, JavascriptExecutor js, List<String> automationSteps) throws InterruptedException {
@@ -606,138 +641,4 @@ public class WorklogService {
         }
     }
 
-    private WebElement findWorklogEditor(WebDriverWait wait, List<String> automationSteps, boolean dropdownSelected) throws InterruptedException {
-        Thread.sleep(2000);
-
-        String[] editorXPaths = {
-            XPathLoader.get("editor.radix.pattern"),
-            XPathLoader.get("editor.contenteditable.main"),
-            XPathLoader.get("editor.tiptap"),
-            XPathLoader.get("editor.contenteditable.form"),
-            XPathLoader.get("editor.any.contenteditable")
-        };
-
-        String[] editorDescriptions = {
-            "editor.radix.pattern",
-            "editor.contenteditable.main",
-            "editor.tiptap",
-            "editor.contenteditable.form",
-            "editor.any.contenteditable"
-        };
-
-        for (int i = 0; i < editorXPaths.length; i++) {
-            try {
-                WebElement editor = wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.xpath(editorXPaths[i])));
-                addStep(automationSteps, "Found editor using " + editorDescriptions[i] + " XPath");
-                return editor;
-            } catch (Exception e) {
-                addStep(automationSteps, "Editor not found with " + editorDescriptions[i] + ", trying next...");
-            }
-        }
-
-        String errorMsg = "Could not find worklog field after " +
-                         (dropdownSelected ? "dropdown was selected" : "dropdown selection failed");
-        addStep(automationSteps, "ERROR: " + errorMsg);
-        throw new RuntimeException(errorMsg);
-    }
-
-    private String escapeHtml(String text) {
-        return text.replace("&", "&amp;")
-                   .replace("<", "&lt;")
-                   .replace(">", "&gt;")
-                   .replace("\"", "&quot;")
-                   .replace("'", "&#39;");
-    }
-
-    private String updateAllListSections(String html, String tasksContent, String challengesContent, String blockersContent) {
-        String[] templatesToRemove = {
-            "Add more tasks",
-            "Add any obstacles encountered and how you resolved them",
-            "Add any blockers faced"
-        };
-
-        String updatedHtml = html;
-        for (String template : templatesToRemove) {
-            updatedHtml = removeListItemContaining(updatedHtml, template);
-        }
-
-        updatedHtml = updateNthListFirstItem(updatedHtml, 1, tasksContent);
-        updatedHtml = updateNthListFirstItem(updatedHtml, 2, challengesContent);
-        updatedHtml = updateNthListFirstItem(updatedHtml, 3, blockersContent);
-
-        return updatedHtml;
-    }
-
-    private String updateNthListFirstItem(String html, int ulIndex, String newContent) {
-        int ulCount = 0;
-        int searchStart = 0;
-        int targetUlStart = -1;
-        int targetUlEnd = -1;
-
-        while (ulCount < ulIndex) {
-            int ulStart = html.indexOf("<ul", searchStart);
-            if (ulStart == -1) {
-                return html;
-            }
-
-            ulCount++;
-            if (ulCount == ulIndex) {
-                targetUlStart = ulStart;
-                targetUlEnd = html.indexOf("</ul>", ulStart);
-                break;
-            }
-
-            searchStart = ulStart + 3;
-        }
-
-        if (targetUlStart == -1 || targetUlEnd == -1) {
-            return html;
-        }
-
-        int firstLiStart = html.indexOf("<li", targetUlStart);
-        if (firstLiStart == -1 || firstLiStart > targetUlEnd) {
-            return html;
-        }
-
-        int firstLiEnd = html.indexOf("</li>", firstLiStart);
-        if (firstLiEnd == -1 || firstLiEnd > targetUlEnd) {
-            return html;
-        }
-
-        StringBuilder result = new StringBuilder();
-        result.append(html.substring(0, firstLiStart));
-        result.append("<li class=\"list-item\"><p>")
-              .append(escapeHtml(newContent.trim()))
-              .append("</p></li>");
-        result.append(html.substring(firstLiEnd + 5));
-
-        return result.toString();
-    }
-
-    private String removeListItemContaining(String html, String text) {
-        int searchStart = 0;
-        while (true) {
-            int liStart = html.indexOf("<li", searchStart);
-            if (liStart == -1) {
-                break;
-            }
-
-            int liEnd = html.indexOf("</li>", liStart);
-            if (liEnd == -1) {
-                break;
-            }
-
-            String liContent = html.substring(liStart, liEnd + 5);
-
-            if (liContent.contains(text)) {
-                html = html.substring(0, liStart) + html.substring(liEnd + 5);
-                continue;
-            }
-
-            searchStart = liEnd + 5;
-        }
-
-        return html;
-    }
 }

@@ -30,6 +30,9 @@ public class EmailService {
     @Value("${notification.email}")
     private String notificationEmail;
 
+    @Value("${email.enabled:true}")
+    private boolean emailEnabled;
+
     private static class ScreenshotData {
         String description;
         byte[] imageBytes;
@@ -41,6 +44,10 @@ public class EmailService {
     }
 
     public void sendSuccessNotification(String userId, String message) {
+        if (!emailEnabled) {
+            logger.info("Email notifications disabled, skipping success notification for user {}", userId);
+            return;
+        }
         try {
             logger.info("Attempting to send success notification email to {}", notificationEmail);
 
@@ -75,6 +82,10 @@ public class EmailService {
     }
 
     public void sendErrorNotification(String userId, String errorMessage, String steps) {
+        if (!emailEnabled) {
+            logger.info("Email notifications disabled, skipping error notification for user {}", userId);
+            return;
+        }
         try {
             logger.info("Attempting to send error notification email to {}", notificationEmail);
 
@@ -184,6 +195,10 @@ public class EmailService {
     }
 
     public void sendDeploymentSummary(int totalUsers, int successCount, int failCount) {
+        if (!emailEnabled) {
+            logger.info("Email notifications disabled, skipping deployment summary");
+            return;
+        }
         try {
             logger.info("Attempting to send deployment summary email to {}", notificationEmail);
 
