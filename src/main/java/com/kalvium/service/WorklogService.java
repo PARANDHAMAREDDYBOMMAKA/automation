@@ -426,6 +426,14 @@ public class WorklogService {
 
         driver.manage().deleteAllCookies();
 
+        // Clear browser storage to ensure clean session for each user
+        try {
+            js.executeScript("window.localStorage.clear(); window.sessionStorage.clear();");
+            logger.info("Cleared localStorage and sessionStorage");
+        } catch (Exception e) {
+            logger.warn("Could not clear browser storage: {}", e.getMessage());
+        }
+
         String authSessionId = config.getAuthSessionId();
         String keycloakIdentity = config.getKeycloakIdentity();
         String keycloakSession = config.getKeycloakSession();
@@ -446,6 +454,9 @@ public class WorklogService {
             keycloakSession = parts[0];
         }
 
+        logger.info("Injecting cookies for session: {}...",
+            authSessionId != null && authSessionId.length() > 20 ? authSessionId.substring(0, 20) : authSessionId);
+
         addCookieWithRetry(driver, "AUTH_SESSION_ID", authSessionId);
         addCookieWithRetry(driver, "AUTH_SESSION_ID_LEGACY", authSessionId);
         addCookieWithRetry(driver, "KEYCLOAK_IDENTITY", keycloakIdentity);
@@ -454,7 +465,7 @@ public class WorklogService {
         addCookieWithRetry(driver, "KEYCLOAK_SESSION_LEGACY", keycloakSession);
 
         int cookiesSet = driver.manage().getCookies().size();
-        logger.info("Cookies injected successfully for user ({} cookies total)", cookiesSet);
+        logger.info("Cookies injected successfully ({} cookies total)", cookiesSet);
     }
 
     private void addCookieWithRetry(WebDriver driver, String name, String value) {
