@@ -22,6 +22,7 @@ logs/
 # Sensitive configuration files
 src/main/resources/config.properties
 config.json
+.env
 
 # Database files
 *.db

@@ -1,15 +1,16 @@
 package com.kalvium.service;
 
+import com.resend.Resend;
+import com.resend.core.exception.ResendException;
+import com.resend.services.emails.model.Attachment;
+import com.resend.services.emails.model.CreateEmailOptions;
+import com.resend.services.emails.model.CreateEmailResponse;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
-import jakarta.mail.internet.MimeMessage;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -24,14 +25,26 @@ public class EmailService {
     private static final Logger logger = LoggerFactory.getLogger(EmailService.class);
     private static final Pattern SCREENSHOT_PATTERN = Pattern.compile("\\[SCREENSHOT_(\\d+)]([^|]+)\\|([A-Za-z0-9+/=]+)");
 
-    @Autowired
-    private JavaMailSender mailSender;
+    private Resend resend;
 
     @Value("${notification.email}")
     private String notificationEmail;
 
     @Value("${email.enabled:true}")
     private boolean emailEnabled;
+
+    private final String resendApiKey = "re_KLz77iaH_AcP6jMsCfLHt6RhphLbdeCrn";
+    private final String fromEmail = "onboarding@resend.dev";
+
+    @PostConstruct
+    public void init() {
+        if (resendApiKey != null && !resendApiKey.isEmpty()) {
+            this.resend = new Resend(resendApiKey);
+            logger.info("Resend client initialized successfully");
+        } else {
+            logger.warn("Resend API key not configured, email notifications will be disabled");
+        }
+    }
 
     private static class ScreenshotData {
         String description;
@@ -48,33 +61,28 @@ public class EmailService {
             logger.info("Email notifications disabled, skipping success notification for user {}", userId);
             return;
         }
+
+        if (resend == null) {
+            logger.warn("Resend client not initialized, skipping email notification");
+            return;
+        }
+
         try {
             logger.info("Attempting to send success notification email to {}", notificationEmail);
 
             List<ScreenshotData> screenshots = extractScreenshots(message);
             String cleanMessage = removeScreenshotsFromMessage(message);
 
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            String subject = "Worklog Submission Success - " + getCurrentTimestamp();
+            String htmlBody = buildSuccessEmailHtml(userId, cleanMessage);
 
-            helper.setTo(notificationEmail);
-            helper.setSubject("Worklog Submission Success - " + getCurrentTimestamp());
-            helper.setText(buildSuccessEmail(userId, cleanMessage));
-            helper.setFrom(notificationEmail);
+            sendEmail(subject, htmlBody, screenshots);
 
-            for (int i = 0; i < screenshots.size(); i++) {
-                ScreenshotData ss = screenshots.get(i);
-                String filename = "screenshot_" + (i + 1) + "_" + sanitizeFilename(ss.description) + ".png";
-                helper.addAttachment(filename, new ByteArrayResource(ss.imageBytes), "image/png");
-                logger.info("Attached screenshot: {}", filename);
-            }
-
-            mailSender.send(mimeMessage);
             logger.info("Success notification email sent successfully to {} with {} screenshots",
-                notificationEmail, screenshots.size());
+                    notificationEmail, screenshots.size());
         } catch (Exception e) {
             logger.error("Failed to send success notification email to {}: {} - {}",
-                notificationEmail, e.getClass().getSimpleName(), e.getMessage());
+                    notificationEmail, e.getClass().getSimpleName(), e.getMessage());
             if (e.getCause() != null) {
                 logger.error("Root cause: {} - {}", e.getCause().getClass().getSimpleName(), e.getCause().getMessage());
             }
@@ -86,37 +94,90 @@ public class EmailService {
             logger.info("Email notifications disabled, skipping error notification for user {}", userId);
             return;
         }
+
+        if (resend == null) {
+            logger.warn("Resend client not initialized, skipping email notification");
+            return;
+        }
+
         try {
             logger.info("Attempting to send error notification email to {}", notificationEmail);
 
             List<ScreenshotData> screenshots = extractScreenshots(steps);
             String cleanSteps = removeScreenshotsFromMessage(steps);
 
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            String subject = "Worklog Submission Failed - " + getCurrentTimestamp();
+            String htmlBody = buildErrorEmailHtml(userId, errorMessage, cleanSteps);
 
-            helper.setTo(notificationEmail);
-            helper.setSubject("Worklog Submission Failed - " + getCurrentTimestamp());
-            helper.setText(buildErrorEmail(userId, errorMessage, cleanSteps));
-            helper.setFrom(notificationEmail);
+            sendEmail(subject, htmlBody, screenshots);
 
-            for (int i = 0; i < screenshots.size(); i++) {
-                ScreenshotData ss = screenshots.get(i);
-                String filename = "screenshot_" + (i + 1) + "_" + sanitizeFilename(ss.description) + ".png";
-                helper.addAttachment(filename, new ByteArrayResource(ss.imageBytes), "image/png");
-                logger.info("Attached screenshot: {}", filename);
-            }
-
-            mailSender.send(mimeMessage);
             logger.info("Error notification email sent successfully to {} with {} screenshots",
-                notificationEmail, screenshots.size());
+                    notificationEmail, screenshots.size());
         } catch (Exception e) {
             logger.error("Failed to send error notification email to {}: {} - {}",
-                notificationEmail, e.getClass().getSimpleName(), e.getMessage());
+                    notificationEmail, e.getClass().getSimpleName(), e.getMessage());
             if (e.getCause() != null) {
                 logger.error("Root cause: {} - {}", e.getCause().getClass().getSimpleName(), e.getCause().getMessage());
             }
         }
+    }
+
+    public void sendDeploymentSummary(int totalUsers, int successCount, int failCount) {
+        if (!emailEnabled) {
+            logger.info("Email notifications disabled, skipping deployment summary");
+            return;
+        }
+
+        if (resend == null) {
+            logger.warn("Resend client not initialized, skipping email notification");
+            return;
+        }
+
+        try {
+            logger.info("Attempting to send deployment summary email to {}", notificationEmail);
+
+            String subject = "Worklog Automation Summary - " + getCurrentTimestamp();
+            String htmlBody = buildSummaryEmailHtml(totalUsers, successCount, failCount);
+
+            sendEmail(subject, htmlBody, new ArrayList<>());
+
+            logger.info("Deployment summary email sent successfully to {}", notificationEmail);
+        } catch (Exception e) {
+            logger.error("Failed to send deployment summary email to {}: {} - {}",
+                    notificationEmail, e.getClass().getSimpleName(), e.getMessage());
+            if (e.getCause() != null) {
+                logger.error("Root cause: {} - {}", e.getCause().getClass().getSimpleName(), e.getCause().getMessage());
+            }
+        }
+    }
+
+    private void sendEmail(String subject, String htmlBody, List<ScreenshotData> screenshots) throws ResendException {
+        CreateEmailOptions.Builder requestBuilder = CreateEmailOptions.builder()
+                .from(fromEmail)
+                .to(notificationEmail)
+                .subject(subject)
+                .html(htmlBody);
+
+        if (!screenshots.isEmpty()) {
+            List<Attachment> attachments = new ArrayList<>();
+            for (int i = 0; i < screenshots.size(); i++) {
+                ScreenshotData ss = screenshots.get(i);
+                String filename = "screenshot_" + (i + 1) + "_" + sanitizeFilename(ss.description) + ".png";
+                String base64Content = Base64.getEncoder().encodeToString(ss.imageBytes);
+
+                Attachment attachment = Attachment.builder()
+                        .fileName(filename)
+                        .content(base64Content)
+                        .build();
+                attachments.add(attachment);
+                logger.info("Attached screenshot: {}", filename);
+            }
+            requestBuilder.attachments(attachments);
+        }
+
+        CreateEmailOptions request = requestBuilder.build();
+        CreateEmailResponse response = resend.emails().send(request);
+        logger.info("Email sent successfully via Resend. Email ID: {}", response.getId());
     }
 
     private List<ScreenshotData> extractScreenshots(String message) {
@@ -153,98 +214,105 @@ public class EmailService {
 
     private String sanitizeFilename(String name) {
         return name.toLowerCase()
-                   .replaceAll("[^a-z0-9]", "_")
-                   .replaceAll("_+", "_")
-                   .replaceAll("^_|_$", "");
+                .replaceAll("[^a-z0-9]", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_|_$", "");
     }
 
-    private String buildSuccessEmail(String userId, String message) {
-        StringBuilder email = new StringBuilder();
-        email.append("Worklog Submission Successful\n");
-        email.append("================================\n\n");
-        email.append("User: ").append(userId != null ? userId : "Unknown").append("\n");
-        email.append("Timestamp: ").append(getCurrentTimestamp()).append("\n");
-        email.append("Status: SUCCESS\n\n");
-        email.append("Details:\n");
-        email.append(message != null ? message : "Worklog submitted successfully");
-        email.append("\n\n");
-        email.append("================================\n");
-        email.append("Kalvium Worklog Automation System\n");
-        return email.toString();
+    private String buildSuccessEmailHtml(String userId, String message) {
+        String escapedMessage = escapeHtml(message != null ? message : "Worklog submitted successfully");
+        String escapedUserId = escapeHtml(userId != null ? userId : "Unknown");
+
+        return "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">" +
+                "<div style=\"background-color: #4CAF50; color: white; padding: 20px; text-align: center;\">" +
+                "<h1 style=\"margin: 0;\">Worklog Submission Successful</h1>" +
+                "</div>" +
+                "<div style=\"padding: 20px; background-color: #f9f9f9;\">" +
+                "<p><strong>User:</strong> " + escapedUserId + "</p>" +
+                "<p><strong>Timestamp:</strong> " + getCurrentTimestamp() + "</p>" +
+                "<p><strong>Status:</strong> <span style=\"color: #4CAF50; font-weight: bold;\">SUCCESS</span></p>" +
+                "<hr style=\"border: 1px solid #ddd;\">" +
+                "<h3>Details:</h3>" +
+                "<pre style=\"background-color: #fff; padding: 15px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;\">" + escapedMessage + "</pre>" +
+                "</div>" +
+                "<div style=\"background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;\">" +
+                "Kalvium Worklog Automation System" +
+                "</div>" +
+                "</div>";
     }
 
-    private String buildErrorEmail(String userId, String errorMessage, String steps) {
-        StringBuilder email = new StringBuilder();
-        email.append("Worklog Submission Failed\n");
-        email.append("================================\n\n");
-        email.append("User: ").append(userId != null ? userId : "Unknown").append("\n");
-        email.append("Timestamp: ").append(getCurrentTimestamp()).append("\n");
-        email.append("Status: FAILED\n\n");
-        email.append("Error Message:\n");
-        email.append(errorMessage != null ? errorMessage : "Unknown error").append("\n\n");
+    private String buildErrorEmailHtml(String userId, String errorMessage, String steps) {
+        String escapedUserId = escapeHtml(userId != null ? userId : "Unknown");
+        String escapedError = escapeHtml(errorMessage != null ? errorMessage : "Unknown error");
 
+        String stepsHtml = "";
         if (steps != null && !steps.isEmpty()) {
-            email.append("Automation Steps:\n");
-            email.append(steps).append("\n\n");
+            stepsHtml = "<h3>Automation Steps:</h3>" +
+                    "<pre style=\"background-color: #fff; padding: 15px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;\">" +
+                    escapeHtml(steps) + "</pre>";
         }
 
-        email.append("================================\n");
-        email.append("Please check the logs for more details.\n");
-        email.append("Kalvium Worklog Automation System\n");
-        return email.toString();
+        return "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">" +
+                "<div style=\"background-color: #f44336; color: white; padding: 20px; text-align: center;\">" +
+                "<h1 style=\"margin: 0;\">Worklog Submission Failed</h1>" +
+                "</div>" +
+                "<div style=\"padding: 20px; background-color: #f9f9f9;\">" +
+                "<p><strong>User:</strong> " + escapedUserId + "</p>" +
+                "<p><strong>Timestamp:</strong> " + getCurrentTimestamp() + "</p>" +
+                "<p><strong>Status:</strong> <span style=\"color: #f44336; font-weight: bold;\">FAILED</span></p>" +
+                "<hr style=\"border: 1px solid #ddd;\">" +
+                "<h3>Error Message:</h3>" +
+                "<pre style=\"background-color: #ffebee; padding: 15px; border-radius: 5px; color: #c62828; overflow-x: auto; white-space: pre-wrap;\">" + escapedError + "</pre>" +
+                stepsHtml +
+                "</div>" +
+                "<div style=\"background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;\">" +
+                "Please check the logs for more details.<br>" +
+                "Kalvium Worklog Automation System" +
+                "</div>" +
+                "</div>";
     }
 
-    public void sendDeploymentSummary(int totalUsers, int successCount, int failCount) {
-        if (!emailEnabled) {
-            logger.info("Email notifications disabled, skipping deployment summary");
-            return;
-        }
-        try {
-            logger.info("Attempting to send deployment summary email to {}", notificationEmail);
+    private String buildSummaryEmailHtml(int totalUsers, int successCount, int failCount) {
+        String statusColor = successCount == totalUsers ? "#4CAF50" : (failCount == totalUsers ? "#f44336" : "#FF9800");
+        String statusText = successCount == totalUsers ? "ALL SUCCESSFUL" : (failCount == totalUsers ? "ALL FAILED" : "PARTIAL SUCCESS");
 
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, false, "UTF-8");
+        double successPercent = totalUsers > 0 ? (successCount * 100.0 / totalUsers) : 0;
+        double failPercent = totalUsers > 0 ? (failCount * 100.0 / totalUsers) : 0;
 
-            helper.setTo(notificationEmail);
-            helper.setSubject("Worklog Automation Summary - " + getCurrentTimestamp());
-            helper.setText(buildSummaryEmail(totalUsers, successCount, failCount));
-            helper.setFrom(notificationEmail);
-
-            mailSender.send(mimeMessage);
-            logger.info("Deployment summary email sent successfully to {}", notificationEmail);
-        } catch (Exception e) {
-            logger.error("Failed to send deployment summary email to {}: {} - {}",
-                notificationEmail, e.getClass().getSimpleName(), e.getMessage());
-            if (e.getCause() != null) {
-                logger.error("Root cause: {} - {}", e.getCause().getClass().getSimpleName(), e.getCause().getMessage());
-            }
-        }
+        return "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">" +
+                "<div style=\"background-color: #2196F3; color: white; padding: 20px; text-align: center;\">" +
+                "<h1 style=\"margin: 0;\">Worklog Automation Summary</h1>" +
+                "</div>" +
+                "<div style=\"padding: 20px; background-color: #f9f9f9;\">" +
+                "<p><strong>Timestamp:</strong> " + getCurrentTimestamp() + "</p>" +
+                "<hr style=\"border: 1px solid #ddd;\">" +
+                "<table style=\"width: 100%; text-align: center; margin: 20px 0;\">" +
+                "<tr>" +
+                "<td><h2 style=\"margin: 0; color: #333;\">" + totalUsers + "</h2><p style=\"margin: 5px 0; color: #666;\">Total Users</p></td>" +
+                "<td><h2 style=\"margin: 0; color: #4CAF50;\">" + successCount + "</h2><p style=\"margin: 5px 0; color: #666;\">Successful (" + String.format("%.1f", successPercent) + "%)</p></td>" +
+                "<td><h2 style=\"margin: 0; color: #f44336;\">" + failCount + "</h2><p style=\"margin: 5px 0; color: #666;\">Failed (" + String.format("%.1f", failPercent) + "%)</p></td>" +
+                "</tr>" +
+                "</table>" +
+                "<div style=\"text-align: center; padding: 15px; background-color: " + statusColor + "; color: white; border-radius: 5px;\">" +
+                "<strong>Status: " + statusText + "</strong>" +
+                "</div>" +
+                "</div>" +
+                "<div style=\"background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;\">" +
+                "Kalvium Worklog Automation System" +
+                "</div>" +
+                "</div>";
     }
 
-    private String buildSummaryEmail(int totalUsers, int successCount, int failCount) {
-        StringBuilder email = new StringBuilder();
-        email.append("Worklog Automation Deployment Summary\n");
-        email.append("========================================\n\n");
-        email.append("Timestamp: ").append(getCurrentTimestamp()).append("\n\n");
-        email.append("Total Users Processed: ").append(totalUsers).append("\n");
-        email.append("Successful Submissions: ").append(successCount).append(" (")
-             .append(totalUsers > 0 ? String.format("%.1f%%", (successCount * 100.0 / totalUsers)) : "0%")
-             .append(")\n");
-        email.append("Failed Submissions: ").append(failCount).append(" (")
-             .append(totalUsers > 0 ? String.format("%.1f%%", (failCount * 100.0 / totalUsers)) : "0%")
-             .append(")\n\n");
-
-        if (successCount == totalUsers) {
-            email.append("Status: ALL SUCCESSFUL\n");
-        } else if (failCount == totalUsers) {
-            email.append("Status: ALL FAILED\n");
-        } else {
-            email.append("Status: PARTIAL SUCCESS\n");
+    private String escapeHtml(String text) {
+        if (text == null) {
+            return "";
         }
-
-        email.append("\n========================================\n");
-        email.append("Kalvium Worklog Automation System\n");
-        return email.toString();
+        return text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private String getCurrentTimestamp() {
