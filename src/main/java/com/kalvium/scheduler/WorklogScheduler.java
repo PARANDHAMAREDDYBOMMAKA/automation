@@ -82,6 +82,8 @@ public class WorklogScheduler {
         logger.info("=== Scheduled Worklog Automation Started at {} ===",
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
+        org.openqa.selenium.WebDriver sharedBrowser = null;
+
         try {
             java.util.List<com.kalvium.model.AuthConfig> configs = configStorage.loadAllConfigs();
 
@@ -90,19 +92,30 @@ public class WorklogScheduler {
                 return;
             }
 
-            logger.info("Found {} user(s) to process. Processing sequentially...", configs.size());
+            logger.info("Found {} user(s) to process. Using browser pooling (single browser for all users)...", configs.size());
+
+            // Create a single shared browser for all users
+            sharedBrowser = worklogService.createSharedBrowser();
+
+            if (sharedBrowser == null) {
+                logger.error("Failed to create shared browser. Falling back to individual browser per user.");
+                runWithIndividualBrowsers(configs);
+                return;
+            }
+
+            logger.info("Shared browser created successfully. Processing all users with same browser instance...");
 
             int successCount = 0;
             int failCount = 0;
 
             for (int i = 0; i < configs.size(); i++) {
                 com.kalvium.model.AuthConfig config = configs.get(i);
-                logger.info("=== Processing user {}/{} ===", (i + 1), configs.size());
+                logger.info("=== Processing user {}/{} (browser pooling) ===", (i + 1), configs.size());
 
                 try {
                     logger.info("Starting worklog submission for user {}/{}", (i + 1), configs.size());
 
-                    String result = worklogService.submitWorklog(config);
+                    String result = worklogService.submitWorklogWithSharedBrowser(config, sharedBrowser);
 
                     logger.info("User {}/{} Result: {}", (i + 1), configs.size(),
                         result.length() > 200 ? result.substring(0, 200) + "..." : result);
@@ -131,13 +144,24 @@ public class WorklogScheduler {
                     String errorMessage = "Exception occurred: " + e.getMessage();
                     String stackTrace = e.getClass().getName() + ": " + e.getMessage();
                     emailService.sendErrorNotification(userId, errorMessage, stackTrace);
+
+                    // If browser crashed, try to recreate it for remaining users
+                    try {
+                        if (!isBrowserAlive(sharedBrowser)) {
+                            logger.warn("Browser appears to have crashed. Recreating for remaining users...");
+                            worklogService.closeSharedBrowser(sharedBrowser);
+                            sharedBrowser = worklogService.createSharedBrowser();
+                        }
+                    } catch (Exception browserEx) {
+                        logger.error("Failed to recover browser: " + browserEx.getMessage());
+                    }
                 }
 
+                // Short delay between users (browser is reused, so less cleanup needed)
                 if (i < configs.size() - 1) {
                     try {
-                        logger.info("Waiting 10 seconds before processing next user to ensure cleanup...");
-                        Thread.sleep(10000);
-                        logger.info("Ready to process next user");
+                        logger.info("Short delay before next user (browser reused)...");
+                        Thread.sleep(3000);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         logger.warn("Delay interrupted");
@@ -152,10 +176,72 @@ public class WorklogScheduler {
 
         } catch (Exception e) {
             logger.error("Error during scheduled worklog submission", e);
+        } finally {
+            // Always close the shared browser at the end
+            if (sharedBrowser != null) {
+                logger.info("Closing shared browser after batch processing...");
+                worklogService.closeSharedBrowser(sharedBrowser);
+            }
         }
 
         logger.info("=== Scheduled Worklog Automation Finished at {} ===",
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+    }
+
+    /**
+     * Checks if the browser is still alive and responsive.
+     */
+    private boolean isBrowserAlive(org.openqa.selenium.WebDriver driver) {
+        try {
+            driver.getTitle();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Fallback method: processes users with individual browsers (old behavior).
+     */
+    private void runWithIndividualBrowsers(java.util.List<com.kalvium.model.AuthConfig> configs) {
+        logger.info("Running with individual browsers (fallback mode)...");
+
+        int successCount = 0;
+        int failCount = 0;
+
+        for (int i = 0; i < configs.size(); i++) {
+            com.kalvium.model.AuthConfig config = configs.get(i);
+            logger.info("=== Processing user {}/{} (individual browser) ===", (i + 1), configs.size());
+
+            try {
+                String result = worklogService.submitWorklog(config);
+
+                if (result.startsWith("SUCCESS")) {
+                    successCount++;
+                    logger.info("✓ User {}/{} worklog submitted successfully", (i + 1), configs.size());
+                    emailService.sendSuccessNotification("User " + (i + 1) + "/" + configs.size(), result);
+                } else {
+                    failCount++;
+                    logger.error("✗ User {}/{} worklog submission failed", (i + 1), configs.size());
+                    emailService.sendErrorNotification("User " + (i + 1) + "/" + configs.size(), result, result);
+                }
+            } catch (Exception e) {
+                failCount++;
+                logger.error("✗ Exception processing user {}/{}: {}", (i + 1), configs.size(), e.getMessage());
+                emailService.sendErrorNotification("User " + (i + 1) + "/" + configs.size(),
+                    "Exception: " + e.getMessage(), e.getClass().getName() + ": " + e.getMessage());
+            }
+
+            if (i < configs.size() - 1) {
+                try {
+                    Thread.sleep(10000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        emailService.sendDeploymentSummary(configs.size(), successCount, failCount);
     }
 
     @Scheduled(cron = "0 0 */6 * * *", zone = "UTC")

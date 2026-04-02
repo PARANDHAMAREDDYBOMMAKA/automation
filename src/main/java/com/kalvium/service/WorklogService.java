@@ -36,6 +36,9 @@ public class WorklogService {
     private static final int PAGE_LOAD_TIMEOUT_SECONDS = 60;
     private static final int ELEMENT_WAIT_TIMEOUT_SECONDS = 30;
 
+    // Lock to prevent concurrent Chrome/Selenium operations
+    private static final java.util.concurrent.locks.ReentrantLock chromeLock = new java.util.concurrent.locks.ReentrantLock();
+
     @Autowired
     private SupabaseConfigStorageService supabaseStorage;
 
@@ -54,6 +57,12 @@ public class WorklogService {
 
     @SuppressWarnings("UseSpecificCatch")
     public String submitWorklog(AuthConfig config) {
+        // Acquire lock to prevent concurrent Chrome operations
+        if (!chromeLock.tryLock()) {
+            logger.warn("Another worklog submission is in progress. Skipping this request.");
+            return "ERROR: Another worklog submission is already in progress. Please wait and try again.";
+        }
+
         WebDriver driver = null;
         List<String> automationSteps = new ArrayList<>();
         List<Screenshot> screenshots = new ArrayList<>();
@@ -209,6 +218,10 @@ public class WorklogService {
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             }
+
+            // Release the lock
+            chromeLock.unlock();
+            logger.info("Chrome lock released");
         }
     }
 
@@ -644,6 +657,213 @@ public class WorklogService {
                 addStep(automationSteps, "All dropdown XPath strategies failed: " + e2.getMessage());
                 return false;
             }
+        }
+    }
+
+    // ==================== BROWSER POOLING METHODS ====================
+
+    /**
+     * Creates a shared browser instance to be reused across multiple users.
+     * Call this once at the start of a batch run.
+     */
+    @SuppressWarnings("UseSpecificCatch")
+    public WebDriver createSharedBrowser() {
+        logger.info("Creating shared browser for batch processing...");
+
+        try {
+            killAllChromeProcesses();
+            Thread.sleep(2000);
+
+            WebDriverManager.chromedriver().setup();
+            ChromeOptions options = createOptimizedChromeOptions();
+
+            WebDriver driver = new ChromeDriver(options);
+            driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(PAGE_LOAD_TIMEOUT_SECONDS));
+            driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(30));
+            driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(5));
+
+            logger.info("Shared browser created successfully");
+            return driver;
+        } catch (Exception e) {
+            logger.error("Failed to create shared browser: " + e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Closes the shared browser and cleans up resources.
+     * Call this once at the end of a batch run.
+     */
+    @SuppressWarnings("UseSpecificCatch")
+    public void closeSharedBrowser(WebDriver driver) {
+        logger.info("Closing shared browser...");
+
+        if (driver != null) {
+            try {
+                driver.quit();
+                logger.info("Shared browser closed");
+            } catch (Exception e) {
+                logger.error("Error closing shared browser: " + e.getMessage());
+            }
+        }
+
+        try {
+            Thread.sleep(1000);
+            killAllChromeProcesses();
+            Runtime.getRuntime().exec(new String[]{"sh", "-c", "rm -rf /tmp/.org.chromium.Chromium.* /tmp/chrome* /tmp/scoped_dir* 2>/dev/null || true"});
+            logger.info("Cleaned up Chrome resources");
+        } catch (Exception e) {
+            logger.warn("Cleanup error: " + e.getMessage());
+        }
+
+        System.gc();
+    }
+
+    /**
+     * Clears browser state between users (cookies, storage, etc.)
+     */
+    @SuppressWarnings("UseSpecificCatch")
+    public void clearBrowserState(WebDriver driver) {
+        logger.info("Clearing browser state for next user...");
+
+        try {
+            // Delete all cookies
+            driver.manage().deleteAllCookies();
+
+            // Clear localStorage and sessionStorage
+            JavascriptExecutor js = (JavascriptExecutor) driver;
+            js.executeScript("window.localStorage.clear(); window.sessionStorage.clear();");
+
+            // Navigate to blank page to reset state
+            driver.get("about:blank");
+            Thread.sleep(500);
+
+            logger.info("Browser state cleared");
+        } catch (Exception e) {
+            logger.warn("Error clearing browser state: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Submits worklog using an existing shared browser instance.
+     * This is faster than submitWorklog() as it reuses the browser.
+     */
+    @SuppressWarnings("UseSpecificCatch")
+    public String submitWorklogWithSharedBrowser(AuthConfig config, WebDriver driver) {
+        List<String> automationSteps = new ArrayList<>();
+        List<Screenshot> screenshots = new ArrayList<>();
+
+        try {
+            if (config == null || config.getAuthSessionId() == null) {
+                return "ERROR: No configuration provided.";
+            }
+
+            if (driver == null) {
+                return "ERROR: No browser instance provided.";
+            }
+
+            // Clear state from previous user
+            clearBrowserState(driver);
+
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(ELEMENT_WAIT_TIMEOUT_SECONDS));
+            JavascriptExecutor js = (JavascriptExecutor) driver;
+
+            addStep(automationSteps, "Navigating to kalvium.community...");
+            navigateWithRetry(driver, js, "https://kalvium.community", automationSteps);
+
+            Thread.sleep(2000);
+            addStep(automationSteps, "Page loaded successfully, current URL: " + driver.getCurrentUrl());
+
+            addStep(automationSteps, "Injecting authentication cookies...");
+            injectCookies(driver, config);
+            addStep(automationSteps, "Cookies injected successfully");
+
+            addStep(automationSteps, "Navigating to internships page...");
+            navigateWithRetry(driver, js, "https://kalvium.community/internships", automationSteps);
+
+            Thread.sleep(3000);
+
+            addStep(automationSteps, "Waiting for table to load...");
+            try {
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath(XPathLoader.get("table.main"))));
+                Thread.sleep(2000);
+                addStep(automationSteps, "Table found on page");
+            } catch (Exception e) {
+                addStep(automationSteps, "Warning: Table not found, but continuing...");
+            }
+
+            captureScreenshot(driver, screenshots, "Internships page loaded", config.getAuthSessionId());
+
+            addStep(automationSteps, "Looking for pending worklog button using XPath...");
+
+            try {
+                List<WebElement> tableRows = driver.findElements(
+                    By.xpath(XPathLoader.get("table.rows")));
+                addStep(automationSteps, "Found " + tableRows.size() + " row(s) in table");
+
+                if (tableRows.isEmpty()) {
+                    addStep(automationSteps, "No rows found in table - possibly no pending worklogs");
+                    return "SUCCESS: No pending worklogs found to submit.";
+                }
+            } catch (Exception e) {
+                addStep(automationSteps, "Warning: Could not check table rows - " + e.getMessage());
+            }
+
+            WebElement completeButton = findCompleteButton(wait, automationSteps);
+
+            addStep(automationSteps, "Clicking Complete button...");
+            js.executeScript("arguments[0].scrollIntoView({block: 'center'});", completeButton);
+            Thread.sleep(500);
+            js.executeScript("arguments[0].click();", completeButton);
+            Thread.sleep(3000);
+
+            addStep(automationSteps, "Waiting for worklog form to appear...");
+            try {
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                        By.xpath(XPathLoader.get("form.heading.worklog"))));
+                Thread.sleep(2000);
+                addStep(automationSteps, "Worklog form heading found");
+            } catch (Exception e) {
+                addStep(automationSteps, "Warning: Worklog heading not found, checking for form elements...");
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath(XPathLoader.get("form.main"))));
+                Thread.sleep(2000);
+                addStep(automationSteps, "Form detected");
+            }
+            captureScreenshot(driver, screenshots, "Worklog form opened", config.getAuthSessionId());
+
+            addStep(automationSteps, "Filling out the form using XPath locators...");
+            fillFormWithXPaths(wait, js, config, automationSteps);
+            Thread.sleep(1000);
+            captureScreenshot(driver, screenshots, "Form filled", config.getAuthSessionId());
+
+            addStep(automationSteps, "Submitting the form...");
+            WebElement submitButton = wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath(XPathLoader.get("button.submit"))));
+            js.executeScript("arguments[0].scrollIntoView({block: 'center'});", submitButton);
+            Thread.sleep(500);
+            js.executeScript("arguments[0].click();", submitButton);
+            Thread.sleep(3000);
+
+            addStep(automationSteps, "Worklog submitted successfully!");
+            captureScreenshot(driver, screenshots, "Final confirmation", config.getAuthSessionId());
+            logger.info("Worklog submitted successfully");
+            return buildSuccessResponse(automationSteps, screenshots);
+
+        } catch (Exception e) {
+            addStep(automationSteps, "ERROR: " + e.getMessage());
+            logger.error("Error: " + e.getMessage(), e);
+            try {
+                String authId = (config != null) ? config.getAuthSessionId() : null;
+                captureScreenshot(driver, screenshots, "Error state", authId);
+            } catch (Exception screenshotError) {
+                logger.warn("Failed to capture error screenshot: " + screenshotError.getMessage());
+            }
+            return buildErrorResponse(automationSteps, screenshots, e.getMessage());
+        } finally {
+            automationSteps.clear();
+            screenshots.clear();
         }
     }
 
